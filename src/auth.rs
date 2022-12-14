@@ -1,58 +1,73 @@
-use std::collections::HashMap;
-use log;
-use crate::cache::AuthError::{Forbidden, Unauthorized};
-
-pub mod hard_coded;
-
-pub struct AuthCache {
-    data: HashMap<String, Vec<u8>>,
-}
+use super::API_KEY_KIND;
+use super::BASIC_KIND;
+use crate::cache::ReadableCache;
+use crate::AuthFilter;
+use proxy_wasm::types::Bytes;
 
 pub enum AuthError {
-    Unauthorized=401,
-    Forbidden=403
+    Unauthorized = 401,
+    Forbidden = 403,
 }
 
-impl AuthCache {
+pub enum AuthKind {
+    ApiKey,
+    Basic,
+    _JWT,
+}
 
-    pub fn new() -> AuthCache {
-        AuthCache{
-            data: HashMap::new()
-        }
-    }
-
-    pub fn check(&self, client_id: &String, expected: &Vec<u8>) -> Result<(), AuthError> {
-        let actual = self.get(client_id);
-        if let Some(actual) = actual {
-            if actual.eq(expected) {
-                Ok(())
-            } else {
-                Err(Forbidden)
+impl AuthKind {
+    fn format_key(&self, api_id: &String, client_id: &String) -> String {
+        match self {
+            AuthKind::ApiKey => Self::format(api_id, client_id, API_KEY_KIND),
+            AuthKind::Basic => Self::format(api_id, client_id, BASIC_KIND),
+            AuthKind::_JWT => {
+                todo!()
             }
-        } else {
-            Err(Unauthorized)
-        }        
-    }
-
-    fn get(&self, client_id: &String) -> Option<&Vec<u8>>{
-        self.data.get(client_id)
-    }
-
-    pub fn put(&mut self, client_id: String, value: Option<Vec<u8>>) {
-        let res = self.data.insert(client_id.clone(), value.unwrap_or(vec![]));
-        if let None = res {
-            log::info!("Entry add for client_id '{}'", client_id)
-        } else {
-            log::info!("Entry updated for client_id '{}'", client_id)
         }
     }
 
-    pub fn delete(&mut self, client_id: String) {
-        let res = self.data.remove(&client_id[..]);
-        if let Some(_) = res {
-            log::info!("Entry client_id '{}' removed", client_id)
+    fn format(api_id: &String, client_id: &String, kind: &str) -> String {
+        let mut res = String::new();
+        res.push_str(api_id);
+        res.push('.');
+        res.push_str(kind);
+        res.push('.');
+        res.push_str(client_id);
+        res
+    }
+}
+
+pub fn check_api_key(
+    cache: &AuthFilter,
+    api_id: &String,
+    api_key: &String,
+) -> Result<(), AuthError> {
+    check(
+        cache,
+        &AuthKind::ApiKey.format_key(api_id, api_key),
+        Bytes::from(api_key.as_bytes()),
+    )
+}
+
+pub fn check_basic_auth(
+    cache: &AuthFilter,
+    api_id: &String,
+    user: &String,
+    pass: Bytes,
+) -> Result<(), AuthError> {
+    check(cache, &AuthKind::Basic.format_key(api_id, user), pass)
+}
+
+fn check(cache: &AuthFilter, key: &String, expected: Bytes) -> Result<(), AuthError> {
+    log::debug!("[REMOVE]: fetching key in cache: {}", key);
+    let actual = cache.get(key);
+    if let Some(actual) = actual {
+        if actual.eq(&expected) {
+            Ok(())
         } else {
-            log::warn!("No entry for client_id '{}'", client_id)
+            Err(AuthError::Forbidden)
         }
+    } else {
+        Err(AuthError::Unauthorized)
     }
 }
