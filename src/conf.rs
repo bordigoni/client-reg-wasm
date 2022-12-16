@@ -1,62 +1,68 @@
-use super::API_KEY_KIND;
-use super::BASIC_KIND;
-use crate::cache::{ReadableCache, WritableCache};
+use std::error::Error;
+use std::fmt::format;
+
 use json;
 use json::JsonValue;
 use proxy_wasm::types::Bytes;
 
+use crate::cache::{ReadableCache, WritableCache};
 
-pub fn parse_and_store(cache: &mut dyn WritableCache<String, Bytes>, config: String, context_id: u32) {
-    let json = json::parse(config.as_str()).unwrap_or_else(|err| {
-        panic!(
-            "config for context {} cannot be parsed: {}",
-            context_id, err
-        )
-    });
-    if let JsonValue::Short(config_type) = &json["config"] {
-        match from(config_type) {
-            Type::Service => parse_and_store_service_config(cache, &json["service"]),
-            Type::Creds => parse_and_store_creds_config(cache, &json["creds"], context_id),
-            Type::Unknown => panic!("config with value '{}' is not supported", config_type),
+use super::API_KEY_KIND;
+use super::BASIC_KIND;
+
+pub fn parse_and_store(cache: &mut dyn WritableCache<String, Bytes>, config: String, context_id: u32) -> Result<Type, String> {
+    let json = json::parse(config.as_str());
+    match json {
+        Err(err) => {
+            return Err(format!(
+                "config for context {} cannot be parsed: {}",
+                context_id, err
+            ));
         }
-    } else {
-        panic!("\"config\" attribute cannot be found for context:{} in config: {}", context_id, config)
+        Ok(json) => {
+            if let JsonValue::Short(config_type) = &json["config"] {
+                match from(config_type) {
+                    Type::Service(_) => parse_and_store_service_config(&json["service"]),
+                    Type::Creds => parse_and_store_creds_config(cache, &json["creds"], context_id),
+                    Type::Unknown => Err(format!("config with value '{}' is not supported", config_type)),
+                }
+            } else {
+                Err(format!("\"config\" attribute cannot be found for context:{} in config: {}", context_id, config))
+            }
+        }
     }
 }
 
-const CONF_SERVICE_HOST_KEY: &'static str = "conf.service.host";
-const CONF_SERVICE_PORT_KEY: &'static str = "conf.service.port";
 
-fn parse_and_store_service_config(cache: &mut dyn WritableCache<String, Bytes>, conf: &JsonValue) {
+fn parse_and_store_service_config(conf: &JsonValue) -> Result<Type, String> {
+    let host: String;
     // gRPC host
-    if let JsonValue::Short(host) = &conf["host"] {
-        cache.put(
-            String::from(CONF_SERVICE_HOST_KEY),
-            Some(String::from(*host).into_bytes()),
-        );
+    if let JsonValue::Short(h) = &conf["host"] {
+        host = h.to_string();
     } else {
-        panic!("service.host not found or not a String")
+        return Err(format!("service.host not found or not a String"));
     }
 
     // gRPC port
     if let JsonValue::Number(port) = &conf["port"] {
         let (pos, number, exp) = port.as_parts();
         if !pos {
-            panic!("service.port must be positive")
+            return Err(format!("service.port must be positive"));
         }
         if exp > 0 {
-            panic!("service.port must be an integer")
+            return Err(format!("service.port must be an integer"));
         }
         if number > u16::MAX as u64 {
-            panic!("service.port must below {}", u16::MAX)
+            return Err(format!("service.port must below {}", u16::MAX));
         }
 
-        cache.put(
-            String::from(CONF_SERVICE_PORT_KEY),
-            Some(format!("{}", number).into_bytes()),
-        );
+
+        Ok(Type::Service(ServiceConfig {
+            host,
+            port: number as u16,
+        }))
     } else {
-        panic!("service.port not found or not a (positive) Number")
+        Err(format!("service.port not found or not a (positive) Number"))
     }
 }
 
@@ -64,7 +70,7 @@ fn parse_and_store_creds_config(
     cache: &mut dyn WritableCache<String, Bytes>,
     conf: &JsonValue,
     context_id: u32,
-) {
+) -> Result<Type, String> {
     let mut api_id = String::new();
 
     // set mapping from context to api_id
@@ -107,6 +113,8 @@ fn parse_and_store_creds_config(
         let key = as_basic_key(api_id.as_str());
         cache.put(key, Some(vec![]));
     }
+
+    Ok(Type::Creds)
 }
 
 pub fn is_api_key(
@@ -189,15 +197,24 @@ pub fn get_api_key_spec(
     }
 }
 
-enum Type {
-    Service,
+
+#[derive(Default, Debug)]
+pub struct ServiceConfig {
+    host: String,
+    port: u16,
+}
+
+
+#[derive(Debug)]
+pub enum Type {
+    Service(ServiceConfig),
     Creds,
     Unknown,
 }
 
 fn from(type_str: &str) -> Type {
     if type_str == "service" {
-        Type::Service
+        Type::Service(Default::default())
     } else if type_str == "creds" {
         Type::Creds
     } else {
@@ -244,24 +261,25 @@ fn as_api_id_key(api_id: &str) -> String {
 }
 
 
-
 #[cfg(test)]
 mod tests {
     use std::borrow::BorrowMut;
     use std::collections::HashMap;
+
     use proxy_wasm::types::Bytes;
+
     use crate::cache::{ReadableCache, WritableCache};
     use crate::conf;
-    use crate::conf::{ApiKeyLocation, CONF_SERVICE_HOST_KEY, CONF_SERVICE_PORT_KEY, get_api_key_spec, is_api_key, is_basic};
+    use crate::conf::{ApiKeyLocation, get_api_key_spec, is_api_key, is_basic, Type};
 
     struct MockCache {
-        data: HashMap<String, Bytes>
+        data: HashMap<String, Bytes>,
     }
 
     impl MockCache {
         fn new() -> MockCache {
             MockCache {
-                data : HashMap::new()
+                data: HashMap::new()
             }
         }
     }
@@ -271,8 +289,8 @@ mod tests {
             self.data.insert(key, value.unwrap());
         }
 
-        fn _delete(&self, _key: String) {
-            todo!()
+        fn delete(&mut self, key: String) {
+            self.data.remove(&key);
         }
     }
 
@@ -322,7 +340,6 @@ mod tests {
         let spec = get_api_key_spec(&cache, to_str(api_id).as_str());
         assert_eq!(spec.as_ref().unwrap().is_in, ApiKeyLocation::Header);
         assert_eq!(spec.as_ref().unwrap().name, "x-api-key")
-
     }
 
 
@@ -372,21 +389,17 @@ mod tests {
         println!("{:#?}", json);
 
         let mut cache = MockCache::new();
-        conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0);
 
-        {
-            let host = cache.data.get(&String::from(CONF_SERVICE_HOST_KEY)).unwrap();
-            assert_eq!(to_str(host).as_str(), "localhost");
-        }
-
-        {
-            let port = cache.data.get(&String::from(CONF_SERVICE_PORT_KEY)).unwrap();
-            assert_eq!(to_str(port).as_str(), "50051");
+        match conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0).unwrap() {
+            Type::Service(conf) => {
+                assert_eq!(conf.host, "localhost");
+                assert_eq!(conf.port, 50051);
+            }
+            t => { panic!("expected Type::Service, got: {:?}", t) }
         }
     }
 
-    fn to_str(b :&Bytes) -> String {
+    fn to_str(b: &Bytes) -> String {
         String::from_utf8(b.clone()).unwrap()
     }
-
 }

@@ -2,18 +2,13 @@ services:
   envoy:
     image: envoyproxy/envoy:v1.24-latest
     hostname: envoy
-    ports:
-      - "10000:10000"
     volumes:
       - ./envoy.yaml:/etc/envoy/envoy.yaml
       - ./target/wasm32-unknown-unknown/release:/etc/envoy/proxy-wasm-plugins
-    networks:
-      - envoymesh
     command:
       - "envoy"
       - "-c"
       - "/etc/envoy/envoy.yaml"
       - "--log-level"
       - "debug"
-networks:
-  envoymesh: {}
+    network_mode: host

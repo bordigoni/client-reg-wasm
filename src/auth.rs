@@ -1,8 +1,10 @@
+use proxy_wasm::types::Bytes;
+
+use crate::AuthFilter;
+use crate::cache::ReadableCache;
+
 use super::API_KEY_KIND;
 use super::BASIC_KIND;
-use crate::cache::ReadableCache;
-use crate::AuthFilter;
-use proxy_wasm::types::Bytes;
 
 pub enum AuthError {
     Unauthorized = 401,
@@ -59,7 +61,6 @@ pub fn check_basic_auth(
 }
 
 fn check(cache: &AuthFilter, key: &String, expected: Bytes) -> Result<(), AuthError> {
-    log::debug!("[REMOVE]: fetching key in cache: {}", key);
     let actual = cache.get(key);
     if let Some(actual) = actual {
         if actual.eq(&expected) {

@@ -8,7 +8,9 @@ where
     fn get(&self, key: &K) -> Option<V>;
 }
 
-pub trait WritableCache<K, V> {
+// this is unsafe, but need to revamp
+// the whole cache abstraction and use channel to update values
+pub trait WritableCache<K, V> : Sync + Send {
     fn put(&mut self, key: K, value: Option<V>);
-    fn _delete(&self, key: K);
+    fn delete(&mut self, key: K);
 }

@@ -1,7 +1,7 @@
 use log;
 use proxy_wasm::types::Bytes;
-use super::WritableCache;
 
+use super::WritableCache;
 
 pub fn init(cache: &mut dyn WritableCache<String, Bytes>) {
     log::info!("init hard coded cache");

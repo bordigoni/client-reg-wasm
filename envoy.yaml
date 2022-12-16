@@ -118,3 +118,18 @@ static_resources:
                       address: httpbin.org
                       port_value: 80
                   hostname: "httpbin.org"
+    - name: clireg
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      http2_protocol_options: { }
+      connect_timeout: 10s
+      dns_lookup_family: "V4_ONLY"
+      load_assignment:
+        cluster_name: clireg
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 50051

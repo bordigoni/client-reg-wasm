@@ -1,0 +1,39 @@
+syntax = "proto3";
+package registry;
+
+// RegistryRequest meant to initiate the dialog
+message RegistryRequest {
+  // not sure of the need, may want to resume on reconnect
+  bool full_sync = 1;
+
+  // not sure of the need, identifies the last update received, ignore if  full_sync = true
+  int32 nonce = 2;
+}
+
+// represents an update, a new/updated or removed credential
+message RegistryResponse {
+
+  // A single credential
+  message Credential {
+    // identifies the owner of the credential
+    string owner = 1;
+    // the kind of credential, ideally a enum here, but keeping as a string make it more time-proof
+    string kind = 2;
+    // the client_id
+    string client_id = 3;
+    // secret if there is (e.g basic auth)
+    bytes secret = 4;
+  }
+
+  // new or updated credentials
+  repeated Credential credentials = 1;
+
+  // removed ones (secret will be ignored)
+  repeated Credential removals = 2;
+}
+
+service Registry {
+    // get all creds or resume and receive updates
+    rpc Sync(RegistryRequest) returns (stream RegistryResponse){};
+}
+

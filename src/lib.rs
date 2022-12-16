@@ -5,14 +5,14 @@ use proxy_wasm::traits::{Context, HttpContext, RootContext};
 use proxy_wasm::types::{Action, Bytes, LogLevel, Status};
 
 use auth::AuthKind;
-use cache::hard_coded;
-
-use crate::conf::ApiKeyLocation;
 use cache::{ReadableCache, WritableCache};
+
+use conf::{ApiKeyLocation, Type};
 
 mod auth;
 mod cache;
 mod conf;
+mod grpc;
 
 const API_KEY_KIND: &'static str = "api_key";
 const BASIC_KIND: &'static str = "basic";
@@ -50,10 +50,25 @@ impl HttpContext for AuthFilter {
             // check it according to what it is
             match creds.kind {
                 AuthKind::ApiKey => {
-                    self.check_api_key(creds.api_id, creds.client_id);
+                    let res = auth::check_api_key(
+                        &self,
+                        &creds.api_id,
+                        &creds.client_id);
+                    if let Err(_) = res {
+                        log::error!("Authentication: check failed");
+                        self.send_forbidden();
+                    }
                 }
                 AuthKind::Basic => {
-                    self.check_basic_auth(creds.api_id, creds.client_id, creds.secret.unwrap());
+                    let res = auth::check_basic_auth(
+                        &self,
+                        &creds.api_id,
+                        &creds.client_id,
+                        creds.secret.unwrap());
+                    if let Err(_) = res {
+                        log::error!("Authentication: check failed");
+                        self.send_forbidden();
+                    }
                 }
                 // any other situation is a fatal error
                 _ => {
@@ -157,23 +172,6 @@ impl AuthFilter {
         None
     }
 
-    fn check_api_key(&mut self, api_id: String, api_key: String) {
-        let res = auth::check_api_key(&self, &api_id, &api_key);
-        if let Err(_) = res {
-            log::error!("Authentication: check failed");
-            self.send_forbidden();
-        }
-    }
-
-    fn check_basic_auth(&self, api_id: String, user: String, pass: Bytes) {
-
-        let res = auth::check_basic_auth(&self, &api_id, &user, pass);
-        if let Err(_) = res {
-            log::error!("Authentication: check failed");
-            self.send_forbidden();
-        }
-    }
-
     fn send_forbidden(&self) {
         self.send_http_response(403, vec![], None)
     }
@@ -192,7 +190,28 @@ impl ReadableCache<String, Bytes> for AuthFilter {
     }
 }
 
-impl Context for AuthFilterConfig {}
+impl Context for AuthFilterConfig {
+
+    fn on_grpc_call_response(&mut self, _token_id: u32, _status_code: u32, response_size: usize) {
+        log::info!("GRPC RESPONSE {}", response_size);
+        if response_size > 0 {
+            let message = self.get_grpc_stream_message(0, response_size);
+            grpc::handle_receive(self, message);
+        }
+    }
+
+    fn on_grpc_stream_message(&mut self, _token_id: u32, message_size: usize) {
+        log::info!("GRPC MESSAGE: {}", message_size);
+        if message_size > 0 {
+            let message = self.get_grpc_stream_message(0, message_size);
+            grpc::handle_receive(self, message);
+        }
+    }
+
+    fn on_grpc_stream_close(&mut self, _token_id: u32, status_code: u32) {
+        log::info!("GRPC CLOSE {}", status_code);
+    }
+}
 
 impl WritableCache<String, Bytes> for AuthFilterConfig {
     fn put(&mut self, key: String, value: Option<Bytes>) {
@@ -208,7 +227,7 @@ impl WritableCache<String, Bytes> for AuthFilterConfig {
         }
     }
 
-    fn _delete(&self, key: String) {
+    fn delete(&mut self, key: String) {
         let res = self.set_shared_data(key.as_str(), None, None);
         if let Err(s) = res {
             match s {
@@ -228,22 +247,31 @@ impl RootContext for AuthFilterConfig {
         log::info!("VM starts fir context_id: {}", self.context_id);
         let conf = self.get_plugin_configuration();
 
-        // here call the gRPC to update the cache
-        hard_coded::init(self);
-
         if let Some(conf) = conf {
-            let res = String::from_utf8(conf.to_vec());
-            if let Ok(json) = res {
-                let id = self.context_id;
-                conf::parse_and_store(self, json, id)
-            } else if let Err(err) = res {
-                log::error!("cannot read config: {}", err);
-                return false;
+            match String::from_utf8(conf.to_vec()) {
+                Ok(json) => {
+                    let id = self.context_id;
+                    match conf::parse_and_store(self, json, id) {
+                        Ok(config_type) => {
+                            if let Type::Service(conf) = config_type {
+                                grpc::call_sync(self, conf);
+                            }
+                            true
+                        }
+                        Err(err) => {
+                            log::error!("error parsing config: {}", err);
+                            false
+                        }
+                    }
+                }
+                Err(err) => {
+                    log::error!("cannot read config: {}", err);
+                    false
+                }
             }
         } else {
             log::error!("no config found for context: {}", self.context_id);
-            return false;
+            false
         }
-        true
     }
 }
