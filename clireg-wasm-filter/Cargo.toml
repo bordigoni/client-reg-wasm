@@ -1,5 +1,5 @@
 [package]
-name = "clireg-wasm"
+name = "clireg-wasm-filter"
 version = "0.1.0"
 description = "Proxy-Wasm plugin client registry"
 edition = "2021"
@@ -25,4 +25,3 @@ opt-level = 3
 codegen-units = 1
 panic = "abort"
 strip = "debuginfo"
-

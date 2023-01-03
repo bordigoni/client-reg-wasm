@@ -20,7 +20,7 @@ bootstrap_extensions:
           runtime: "envoy.wasm.runtime.v8"
           code:
             local:
-              filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm.wasm"
+              filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
 
 static_resources:
   listeners:
@@ -73,7 +73,7 @@ static_resources:
                         runtime: "envoy.wasm.runtime.v8"
                         code:
                           local:
-                            filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm.wasm"
+                            filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
               - name: envoy.filters.http.wasm.1
                 typed_config:
                   "@type": type.googleapis.com/udpa.type.v1.TypedStruct
@@ -97,7 +97,7 @@ static_resources:
                         runtime: "envoy.wasm.runtime.v8"
                         code:
                           local:
-                            filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm.wasm"
+                            filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
               - name: envoy.filters.http.router
                 typed_config:
                   "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
