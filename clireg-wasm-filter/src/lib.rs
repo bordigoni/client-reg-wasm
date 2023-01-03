@@ -195,7 +195,7 @@ impl AuthFilter {
 
 impl ReadableCache<String, Bytes> for AuthFilter {
     fn get(&self, id: &String) -> Option<Bytes> {
-        self.get_shared_data(&id[..]).0
+        self.get_shared_data(id).0
     }
 }
 

@@ -66,6 +66,13 @@ impl RegistryHandler {
                         break;
                     }
                 }
+                match tx.send(Ok(RegistryResponse{credentials:Vec::new(), removals:Vec::new()})).await {
+                    Ok(_) => { println!("> commit") }
+                    Err(err) => {
+                        println!("Error sending stream to client: {}", err);
+                        break;
+                    }
+                }
 
                 thread::sleep(Duration::from_secs(10));
 
