@@ -1,36 +1,48 @@
 extern crate core;
 
+use std::time::Duration;
+
 use log;
 use proxy_wasm::traits::{Context, HttpContext, RootContext};
-use proxy_wasm::types::{Action, Bytes, LogLevel, Status};
+use proxy_wasm::types::{Action, Bytes, LogLevel};
 
 use auth::AuthKind;
 use cache::{ReadableCache, WritableCache};
-
 use conf::{ApiKeyLocation, Type};
+
+use crate::auth::AuthError;
+use crate::conf::ServiceConfig;
 
 mod auth;
 mod cache;
 mod conf;
 mod grpc;
 
-const API_KEY_KIND: &'static str = "api_key";
-const BASIC_KIND: &'static str = "basic";
+const API_KEY_KIND: &str = "api_key";
+const BASIC_KIND: &str = "basic";
+const RETRY_GRPC_CODES: &[u32] = &[2, 5, 8, 9, 10, 13, 14, 15];
 
 proxy_wasm::main! {{
 
     proxy_wasm::set_log_level(LogLevel::Trace);
     proxy_wasm::set_root_context(|context_id| -> Box<dyn RootContext> {
-        Box::new(AuthFilterConfig{context_id : context_id})
+        Box::new(AuthFilterConfig{
+            context_id,
+            grpc_token:0,
+            config: Default::default()})
     });
     proxy_wasm::set_http_context(|_context_id, root_context_id| -> Box<dyn HttpContext> {
-        Box::new(AuthFilter{root_context_id: root_context_id})
+        Box::new(AuthFilter{
+            root_context_id
+        })
     });
 
 }}
 
 pub struct AuthFilterConfig {
     context_id: u32,
+    grpc_token: u32,
+    config: ServiceConfig,
 }
 
 pub struct AuthFilter {
@@ -41,7 +53,7 @@ impl Context for AuthFilter {}
 
 impl HttpContext for AuthFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _stream_code: bool) -> Action {
-        log::info!("checking cred for root_context_id {}", self.root_context_id);
+        log::debug!("checking cred for root_context_id {}", self.root_context_id);
 
         // base on config, extract client id
         let creds = self.extract_credentials();
@@ -54,10 +66,7 @@ impl HttpContext for AuthFilter {
                         &self,
                         &creds.api_id,
                         &creds.client_id);
-                    if let Err(_) = res {
-                        log::error!("Authentication: check failed");
-                        self.send_forbidden();
-                    }
+                    self.on_failed_send_forbidden(res)
                 }
                 AuthKind::Basic => {
                     let res = auth::check_basic_auth(
@@ -65,20 +74,17 @@ impl HttpContext for AuthFilter {
                         &creds.api_id,
                         &creds.client_id,
                         creds.secret.unwrap());
-                    if let Err(_) = res {
-                        log::error!("Authentication: check failed");
-                        self.send_forbidden();
-                    }
+                    self.on_failed_send_forbidden(res)
                 }
                 // any other situation is a fatal error
                 _ => {
-                    log::error!("Cannot infer auth type");
+                    log::info!("Cannot infer auth type");
                     self.send_internal_server_error()
                 }
             }
         } else {
             // no client_id extracted
-            log::error!("Authentication: no credentials found in request");
+            log::debug!("Authentication: no credentials found in request");
             self.send_unauthorized()
         }
         return Action::Continue;
@@ -118,11 +124,11 @@ impl AuthFilter {
                                 });
                         }
                         ApiKeyLocation::QueryParam => {
-                            log::warn!("Api-Key Location 'query_param' not handled yet, 401 will be returned");
+                            log::warn!("Api-Key Location 'query_param' not handled yet.");
                             return None;
                         }
                         ApiKeyLocation::Unknown(location) => {
-                            log::error!("Api-Key Location unknown: {}", location);
+                            log::warn!("Api-Key Location unknown: {}", location);
                         }
                     }
                 }
@@ -146,7 +152,7 @@ impl AuthFilter {
                     if basic.to_ascii_lowercase().eq("basic") {
                         let user_pwd_bytes = base64::decode(user_pwd_b64);
                         if let Err(_) = user_pwd_bytes {
-                            log::error!("Authentication: fail to decode basic auth");
+                            log::debug!("Authentication: fail to decode basic auth");
                         }
 
                         if let Ok(user_pwd) = String::from_utf8(user_pwd_bytes.unwrap()) {
@@ -162,18 +168,14 @@ impl AuthFilter {
                     }
                 }
             }
-            log::warn!("basic auth for api_id:{} could not properly parse user and password", &api_id_string);
+            log::debug!("basic auth for api_id:{} could not properly parse user and password", &api_id_string);
             return None;
         }
-        log::warn!(
+        log::debug!(
             "auth kind for ctx:{} could not be determined",
             self.root_context_id
         );
         None
-    }
-
-    fn send_forbidden(&self) {
-        self.send_http_response(403, vec![], None)
     }
 
     fn send_unauthorized(&self) {
@@ -182,34 +184,18 @@ impl AuthFilter {
     pub fn send_internal_server_error(&self) {
         self.send_http_response(500, vec![], None)
     }
+
+    fn on_failed_send_forbidden(&mut self, res: Result<(), AuthError>) {
+        if let Err(_) = res {
+            log::error!("Authentication: check failed");
+            self.send_http_response(403, vec![], None);
+        }
+    }
 }
 
 impl ReadableCache<String, Bytes> for AuthFilter {
     fn get(&self, id: &String) -> Option<Bytes> {
         self.get_shared_data(&id[..]).0
-    }
-}
-
-impl Context for AuthFilterConfig {
-
-    fn on_grpc_call_response(&mut self, _token_id: u32, _status_code: u32, response_size: usize) {
-        log::info!("GRPC RESPONSE {}", response_size);
-        if response_size > 0 {
-            let message = self.get_grpc_stream_message(0, response_size);
-            grpc::handle_receive(self, message);
-        }
-    }
-
-    fn on_grpc_stream_message(&mut self, _token_id: u32, message_size: usize) {
-        log::info!("GRPC MESSAGE: {}", message_size);
-        if message_size > 0 {
-            let message = self.get_grpc_stream_message(0, message_size);
-            grpc::handle_receive(self, message);
-        }
-    }
-
-    fn on_grpc_stream_close(&mut self, _token_id: u32, status_code: u32) {
-        log::info!("GRPC CLOSE {}", status_code);
     }
 }
 
@@ -223,28 +209,34 @@ impl WritableCache<String, Bytes> for AuthFilterConfig {
                     key,
                     err
                 );
+            } else {
+                log::debug!("[CACHE] Entry {} added", key)
             }
         }
     }
 
     fn delete(&mut self, key: String) {
         let res = self.set_shared_data(key.as_str(), None, None);
-        if let Err(s) = res {
-            match s {
-                Status::Ok => {
-                    log::debug!("[CACHE] Entry {} deleted", key)
-                }
-                err => {
-                    log::error!("[CACHE] Error setting None to shared cache: {:?}", err)
+        match res {
+            Ok(..) => {
+                log::debug!("[CACHE] Entry {} deleted", key)
+            }
+            Err(s) => {
+                match s {
+                    err => {
+                        log::debug!("[CACHE] Error setting None to shared cache key '{}': {:?}", key, err)
+                    }
                 }
             }
         }
     }
 }
 
+
+
 impl RootContext for AuthFilterConfig {
     fn on_configure(&mut self, _plugin_configuration_size: usize) -> bool {
-        log::info!("VM starts fir context_id: {}", self.context_id);
+        log::info!("VM starts for context_id: {}", self.context_id);
         let conf = self.get_plugin_configuration();
 
         if let Some(conf) = conf {
@@ -254,7 +246,11 @@ impl RootContext for AuthFilterConfig {
                     match conf::parse_and_store(self, json, id) {
                         Ok(config_type) => {
                             if let Type::Service(conf) = config_type {
-                                grpc::call_sync(self, conf);
+                                self.config = conf;
+                                if self.grpc_token == 0 {
+                                    self.grpc_connect();
+                                    self.set_tick_period(Duration::from_secs(60))
+                                }
                             }
                             true
                         }
@@ -272,6 +268,42 @@ impl RootContext for AuthFilterConfig {
         } else {
             log::error!("no config found for context: {}", self.context_id);
             false
+        }
+    }
+
+    fn on_tick(&mut self) {
+        if self.grpc_token == 0 {
+            log::debug!("[GRPC] Attempting re-connection");
+            self.grpc_connect()
+        } else {
+            grpc::renew_request(self, self.grpc_token)
+        }
+    }
+}
+
+
+impl Context for AuthFilterConfig {
+
+    fn on_grpc_stream_message(&mut self, token_id: u32, message_size: usize) {
+        log::debug!("[GRPC] message for token:{}, size:{}", token_id, message_size);
+        let message = self.get_grpc_stream_message(0, message_size);
+        grpc::handle_receive(self, message);
+    }
+
+    fn on_grpc_stream_close(&mut self, token_id: u32, status_code: u32) {
+        if self.grpc_token == token_id && RETRY_GRPC_CODES.contains(&status_code) {
+            log::info!("[GRPC] close for token:{} with status:{}: will retry", token_id, status_code);
+            self.grpc_token = 0;
+        } else {
+            log::error!("[GRPC] close for token:{} with status:{}: fatal error, no retry, check logs for more details", token_id, status_code);
+        }
+    }
+}
+
+impl AuthFilterConfig {
+    fn grpc_connect(&mut self) {
+        if let Some(token) = grpc::open_sync_stream(self, &self.config) {
+            self.grpc_token = token;
         }
     }
 }

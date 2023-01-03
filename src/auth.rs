@@ -1,5 +1,5 @@
 use proxy_wasm::types::Bytes;
-
+use log;
 use crate::AuthFilter;
 use crate::cache::ReadableCache;
 
@@ -20,15 +20,15 @@ pub enum AuthKind {
 impl AuthKind {
     fn format_key(&self, api_id: &String, client_id: &String) -> String {
         match self {
-            AuthKind::ApiKey => Self::format(api_id, client_id, API_KEY_KIND),
-            AuthKind::Basic => Self::format(api_id, client_id, BASIC_KIND),
+            AuthKind::ApiKey => Self::format(api_id, API_KEY_KIND, client_id),
+            AuthKind::Basic => Self::format(api_id, BASIC_KIND, client_id),
             AuthKind::_JWT => {
                 todo!()
             }
         }
     }
 
-    fn format(api_id: &String, client_id: &String, kind: &str) -> String {
+    pub fn format(api_id: &String, kind: &str, client_id: &String) -> String {
         let mut res = String::new();
         res.push_str(api_id);
         res.push('.');
@@ -66,6 +66,7 @@ fn check(cache: &AuthFilter, key: &String, expected: Bytes) -> Result<(), AuthEr
         if actual.eq(&expected) {
             Ok(())
         } else {
+            log::warn!("mismatch {:?} != {:?}", expected, actual);
             Err(AuthError::Forbidden)
         }
     } else {

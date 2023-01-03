@@ -1,6 +1,3 @@
-use std::error::Error;
-use std::fmt::format;
-
 use json;
 use json::JsonValue;
 use proxy_wasm::types::Bytes;
@@ -35,34 +32,13 @@ pub fn parse_and_store(cache: &mut dyn WritableCache<String, Bytes>, config: Str
 
 
 fn parse_and_store_service_config(conf: &JsonValue) -> Result<Type, String> {
-    let host: String;
-    // gRPC host
-    if let JsonValue::Short(h) = &conf["host"] {
-        host = h.to_string();
-    } else {
-        return Err(format!("service.host not found or not a String"));
-    }
-
-    // gRPC port
-    if let JsonValue::Number(port) = &conf["port"] {
-        let (pos, number, exp) = port.as_parts();
-        if !pos {
-            return Err(format!("service.port must be positive"));
-        }
-        if exp > 0 {
-            return Err(format!("service.port must be an integer"));
-        }
-        if number > u16::MAX as u64 {
-            return Err(format!("service.port must below {}", u16::MAX));
-        }
-
-
+    // gRPC cluster
+    if let JsonValue::Short(h) = &conf["cluster"] {
         Ok(Type::Service(ServiceConfig {
-            host,
-            port: number as u16,
+            cluster:h.to_string(),
         }))
     } else {
-        Err(format!("service.port not found or not a (positive) Number"))
+        return Err(format!("service.cluster not found or not a String"));
     }
 }
 
@@ -200,8 +176,7 @@ pub fn get_api_key_spec(
 
 #[derive(Default, Debug)]
 pub struct ServiceConfig {
-    host: String,
-    port: u16,
+    pub cluster: String,
 }
 
 
@@ -270,7 +245,7 @@ mod tests {
 
     use crate::cache::{ReadableCache, WritableCache};
     use crate::conf;
-    use crate::conf::{ApiKeyLocation, get_api_key_spec, is_api_key, is_basic, Type};
+    use crate::conf::{ApiKeyLocation, get_api_key_spec, Type};
 
     struct MockCache {
         data: HashMap<String, Bytes>,
@@ -315,7 +290,7 @@ mod tests {
 "#;
 
         let mut cache = MockCache::new();
-        conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0);
+        conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0).unwrap();
 
         let api_id = cache.data.get(&String::from("context.0")).unwrap();
         assert_eq!(to_str(api_id).as_str(), "filter2");
@@ -356,7 +331,7 @@ mod tests {
 "#;
 
         let mut cache = MockCache::new();
-        conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0);
+        conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0).unwrap();
 
         {
             let api_id = cache.data.get(&String::from("context.0")).unwrap();
@@ -379,8 +354,7 @@ mod tests {
 {
   "config": "service",
   "service": {
-    "host": "localhost",
-    "port": 50051
+    "cluster": "test"
   }
 }
 "#;
@@ -392,8 +366,7 @@ mod tests {
 
         match conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0).unwrap() {
             Type::Service(conf) => {
-                assert_eq!(conf.host, "localhost");
-                assert_eq!(conf.port, 50051);
+                assert_eq!(conf.cluster, "test");
             }
             t => { panic!("expected Type::Service, got: {:?}", t) }
         }

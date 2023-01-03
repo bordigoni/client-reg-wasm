@@ -1,82 +1,68 @@
-use std::thread;
-use std::time::Duration;
 use log;
-use prost::{Message};
-use proxy_wasm::traits::{Context};
-
+use prost::Message;
+use proxy_wasm::traits::Context;
 use proxy_wasm::types::Bytes;
+
 use registry::RegistryRequest;
+use crate::auth::AuthKind;
 
 use crate::cache::WritableCache;
 use crate::conf::ServiceConfig;
-use crate::grpc::registry::registry_response::Credential;
 use crate::grpc::registry::RegistryResponse;
 
 pub mod registry;
 
-pub fn call_sync(context: &dyn Context, conf: ServiceConfig) {
+pub fn open_sync_stream(context: &dyn Context, conf: &ServiceConfig) -> Option<u32> {
 
-    // TODO refactor and use conf instead of hard coded values
-    let cluster = "clireg";
-    let attempts = 10;
-    let time_between_attempts = 10;
-
-    let req = RegistryRequest {
-        full_sync: false,
-        nonce: 0,
-    };
-
-    for i in 1..attempts {
-        // match context.open_grpc_stream(
-        //     cluster,
-        //     "registry.Registry",
-        //     "Sync",
-        //     vec![]) {
-        //     Ok(_) => {
-        //         log::info!("grpc open successful");
-        match context.dispatch_grpc_call(
-                    cluster,
-                    "registry.Registry",
-                    "Sync",
-                    vec![],
-                    Some(req.encode_to_vec().as_slice()),
-                    Duration::from_secs(10)) {
-                    Ok(_) => {
-                        log::info!("grpc call successful");
-                        break;
-                    }
-
-                    Err(err) => log::error!("Error connecting to client on attempt: #{}, err: {:?}", i, err)
-                }
-            // }
-            // Err(err) => log::error!("Error connecting to grpc on attempt: #{}, err: {:?}", i, err)
-        //}
-        thread::sleep(Duration::from_secs(time_between_attempts))
+    match context.open_grpc_stream(
+        &conf.cluster,
+        "registry.Registry",
+        "Sync",
+        vec![]) {
+        Ok(token) => {
+            log::debug!("grpc connected with token: {}",token);
+            send_request(context, token, true);
+            Some(token)
+        }
+        Err(err) => {
+            log::error!("error opening grpc service: {:?}", err);
+            None
+        }
     }
+
 }
 
 pub fn handle_receive(cache: &mut dyn WritableCache<String, Bytes>, message: Option<Bytes>) {
+
     if let Some(bytes) = message {
         let res = RegistryResponse::decode(bytes.as_slice());
         match res {
             Ok(response) => {
-                for credential in &response.credentials {
-                    cache.put(to_key(credential), Some(credential.secret.clone()));
+                for cred in &response.removals {
+                    cache.delete(AuthKind::format(&cred.owner, &cred.kind, &cred.client_id))
                 }
-                for credential in &response.credentials {
-                    cache.delete(to_key(credential))
+                for cred in &response.credentials {
+                    cache.put(AuthKind::format(&cred.owner, &cred.kind, &cred.client_id), Some(cred.secret.clone()));
                 }
+
             }
             Err(err) =>
                 log::error!("cannot decode gRPC message: {}", err)
         }
+    } else {
+        log::warn!("no gRPC message")
     }
+
 }
 
-fn to_key(cred: &Credential) -> String {
-    let mut key = String::new();
-    key.push_str(cred.client_id.as_str());
-    key.push_str(cred.kind.as_str());
-    key.push_str(cred.client_id.as_str());
-    key
+pub fn renew_request(context: &dyn Context, token: u32) {
+    send_request(context, token, false);
+}
+
+fn send_request(context: &dyn Context, token: u32, full_sync: bool) {
+    let req = RegistryRequest {
+        full_sync,
+        nonce: 0,
+    };
+    context.send_grpc_stream_message(token, Some(req.encode_to_vec().as_slice()), false)
 }

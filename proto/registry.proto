@@ -34,6 +34,6 @@ message RegistryResponse {
 
 service Registry {
     // get all creds or resume and receive updates
-    rpc Sync(RegistryRequest) returns (stream RegistryResponse){};
+    rpc Sync(stream RegistryRequest) returns (stream RegistryResponse){};
 }
 
