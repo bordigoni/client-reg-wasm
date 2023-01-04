@@ -79,14 +79,21 @@ If you don't specify API Key header you'll end up with a 401.
 I still need to enhance the coding experience, you need to open both directory in separate intellij in order to have it to looked compilable for now. 
 It should be feasible.
 
-## TODO
+## Next steps
 
-* refactor / cleanup / tests / docs
-* explore workspaces to manage two projects in one repo
-* try to generate protobuf struct in wasm-filter
+* Features / deps related
+  * API Key Hashing
+  * JWT handling
+  * try to generate protobuf struct in wasm-filter
 
-  (cannot work for now at it brings tonic in and wasm build fails with too many code that cannot be compiled with the wasm target) 
-* understand why messages are consumed 2 by 2
-* extends envoy config to have 3 API, no auth, APIKey, Basic + TLS
-* allow APIKey in query string
-* JWT handling
+    (cannot work for now at it brings tonic in and wasm build fails with too many code that cannot be compiled with the wasm target)
+  * allow APIKey in query string
+* Envoy related
+   * understand why messages are consumed 2 by 2
+   * use several envoys
+   * extends envoy config to have 3 API, no auth, APIKey, Basic + TLS
+* Clean code
+  * refactor / cleanup / tests / docs
+  * explore workspaces to manage two projects in one repo
+  * Config as JSON (protobuf Struct)
+
