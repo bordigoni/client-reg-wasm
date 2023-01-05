@@ -7,7 +7,11 @@ use crate::cache::{ReadableCache, WritableCache};
 use super::API_KEY_KIND;
 use super::BASIC_KIND;
 
-pub fn parse_and_store(cache: &mut dyn WritableCache<String, Bytes>, config: String, context_id: u32) -> Result<Type, String> {
+pub fn parse_and_store(
+    cache: &mut dyn WritableCache<String, Bytes>,
+    config: String,
+    context_id: u32,
+) -> Result<Type, String> {
     let json = json::parse(config.as_str());
     match json {
         Err(err) => {
@@ -21,21 +25,26 @@ pub fn parse_and_store(cache: &mut dyn WritableCache<String, Bytes>, config: Str
                 match from(config_type) {
                     Type::Service(_) => parse_and_store_service_config(&json["service"]),
                     Type::Creds => parse_and_store_creds_config(cache, &json["creds"], context_id),
-                    Type::Unknown => Err(format!("config with value '{}' is not supported", config_type)),
+                    Type::Unknown => Err(format!(
+                        "config with value '{}' is not supported",
+                        config_type
+                    )),
                 }
             } else {
-                Err(format!("\"config\" attribute cannot be found for context:{} in config: {}", context_id, config))
+                Err(format!(
+                    "\"config\" attribute cannot be found for context:{} in config: {}",
+                    context_id, config
+                ))
             }
         }
     }
 }
 
-
 fn parse_and_store_service_config(conf: &JsonValue) -> Result<Type, String> {
     // gRPC cluster
     if let JsonValue::Short(h) = &conf["cluster"] {
         Ok(Type::Service(ServiceConfig {
-            cluster:h.to_string(),
+            cluster: h.to_string(),
         }))
     } else {
         return Err(format!("service.cluster not found or not a String"));
@@ -66,7 +75,7 @@ fn parse_and_store_creds_config(
 
     if let JsonValue::Short(kind_str) = &conf["kind"] {
         kind.push_str(kind_str);
-        log::debug!("binding api_id {} to kind {}",api_id, &kind);
+        log::debug!("binding api_id {} to kind {}", api_id, &kind);
         cache.put(
             as_api_id_key(api_id.as_str()),
             Some(kind.clone().into_bytes()),
@@ -173,12 +182,10 @@ pub fn get_api_key_spec(
     }
 }
 
-
 #[derive(Default, Debug)]
 pub struct ServiceConfig {
     pub cluster: String,
 }
-
 
 #[derive(Debug)]
 pub enum Type {
@@ -235,7 +242,6 @@ fn as_api_id_key(api_id: &str) -> String {
     key
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::borrow::BorrowMut;
@@ -245,7 +251,7 @@ mod tests {
 
     use crate::cache::{ReadableCache, WritableCache};
     use crate::conf;
-    use crate::conf::{ApiKeyLocation, get_api_key_spec, Type};
+    use crate::conf::{get_api_key_spec, ApiKeyLocation, Type};
 
     struct MockCache {
         data: HashMap<String, Bytes>,
@@ -254,7 +260,7 @@ mod tests {
     impl MockCache {
         fn new() -> MockCache {
             MockCache {
-                data: HashMap::new()
+                data: HashMap::new(),
             }
         }
     }
@@ -304,19 +310,24 @@ mod tests {
             assert_eq!(to_str(in_value).as_str(), "header");
         }
         {
-            let name = cache.data.get(&String::from("filter2.api_key.name")).unwrap();
+            let name = cache
+                .data
+                .get(&String::from("filter2.api_key.name"))
+                .unwrap();
             assert_eq!(to_str(name).as_str(), "x-api-key");
         }
 
         assert!(conf::is_api_key(&cache, 0).0);
         assert!(!conf::is_basic(&cache, 0).0);
-        assert_eq!(conf::is_api_key(&cache, 0).1.unwrap(), String::from("filter2"));
+        assert_eq!(
+            conf::is_api_key(&cache, 0).1.unwrap(),
+            String::from("filter2")
+        );
 
         let spec = get_api_key_spec(&cache, to_str(api_id).as_str());
         assert_eq!(spec.as_ref().unwrap().is_in, ApiKeyLocation::Header);
         assert_eq!(spec.as_ref().unwrap().name, "x-api-key")
     }
-
 
     #[test]
     fn basic_conf_test() {
@@ -345,7 +356,10 @@ mod tests {
 
         assert!(conf::is_basic(&cache, 0).0);
         assert!(!conf::is_api_key(&cache, 0).0);
-        assert_eq!(conf::is_basic(&cache, 0).1.unwrap(), String::from("filter1"));
+        assert_eq!(
+            conf::is_basic(&cache, 0).1.unwrap(),
+            String::from("filter1")
+        );
     }
 
     #[test]
@@ -368,7 +382,9 @@ mod tests {
             Type::Service(conf) => {
                 assert_eq!(conf.cluster, "test");
             }
-            t => { panic!("expected Type::Service, got: {:?}", t) }
+            t => {
+                panic!("expected Type::Service, got: {:?}", t)
+            }
         }
     }
 

@@ -6,17 +6,18 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Sender;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Response, Status, Streaming, Request};
 use tonic::codegen::futures_core::Stream;
 use tonic::transport::Server;
+use tonic::{Request, Response, Status, Streaming};
 
-use registry::{RegistryRequest, RegistryResponse};
 use registry::registry_server::{Registry, RegistryServer};
+use registry::{RegistryRequest, RegistryResponse};
 
 pub mod registry {
     include!(concat!(env!("OUT_DIR"), concat!("/", "registry", ".rs")));
 
-    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("registry_descriptor");
+    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+        tonic::include_file_descriptor_set!("registry_descriptor");
 }
 
 type RegistryResult<T> = Result<Response<T>, Status>;
@@ -28,12 +29,14 @@ pub struct RegistryHandler {
     responses: Arc<Vec<RegistryResponse>>,
 }
 
-
 #[tonic::async_trait]
 impl Registry for RegistryHandler {
-    type SyncStream = Pin<Box<dyn Stream<Item=Result<RegistryResponse, Status>> + Send>>;
+    type SyncStream = Pin<Box<dyn Stream<Item = Result<RegistryResponse, Status>> + Send>>;
 
-    async fn sync(&self, request: Request<Streaming<RegistryRequest>>) -> RegistryResult<Self::SyncStream> {
+    async fn sync(
+        &self,
+        request: Request<Streaming<RegistryRequest>>,
+    ) -> RegistryResult<Self::SyncStream> {
         println!("Got a request: {:?}", request);
 
         let (tx, rx) = mpsc::channel(1);
@@ -45,7 +48,9 @@ impl Registry for RegistryHandler {
             }
         }
 
-        Ok(Response::new(Box::pin(ReceiverStream::new(rx)) as Self::SyncStream))
+        Ok(Response::new(
+            Box::pin(ReceiverStream::new(rx)) as Self::SyncStream
+        ))
     }
 }
 
@@ -60,14 +65,24 @@ impl RegistryHandler {
                 let response = responses.get(i).unwrap();
                 println!("sending response: {:?}", response);
                 match tx.send(Ok(response.clone())).await {
-                    Ok(_) => { println!("> sent") }
+                    Ok(_) => {
+                        println!("> sent")
+                    }
                     Err(err) => {
                         println!("Error sending stream to client: {}", err);
                         break;
                     }
                 }
-                match tx.send(Ok(RegistryResponse{credentials:Vec::new(), removals:Vec::new()})).await {
-                    Ok(_) => { println!("> commit") }
+                match tx
+                    .send(Ok(RegistryResponse {
+                        credentials: Vec::new(),
+                        removals: Vec::new(),
+                    }))
+                    .await
+                {
+                    Ok(_) => {
+                        println!("> commit")
+                    }
                     Err(err) => {
                         println!("Error sending stream to client: {}", err);
                         break;
@@ -85,7 +100,6 @@ impl RegistryHandler {
         });
     }
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -105,7 +119,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Server::builder()
         .add_service(svc)
         .add_service(reflection)
-        .serve(addr).await?;
+        .serve(addr)
+        .await?;
 
     Ok(())
 }

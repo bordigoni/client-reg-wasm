@@ -1,7 +1,7 @@
-use proxy_wasm::types::Bytes;
-use log;
-use crate::AuthFilter;
 use crate::cache::ReadableCache;
+use crate::AuthFilter;
+use log;
+use proxy_wasm::types::Bytes;
 
 use super::API_KEY_KIND;
 use super::BASIC_KIND;
@@ -40,7 +40,7 @@ impl AuthKind {
 }
 
 pub fn check_api_key(
-    cache: &AuthFilter,
+    cache: &dyn ReadableCache<String, Bytes>,
     api_id: &String,
     api_key: &String,
 ) -> Result<(), AuthError> {
@@ -52,7 +52,7 @@ pub fn check_api_key(
 }
 
 pub fn check_basic_auth(
-    cache: &AuthFilter,
+    cache: &dyn ReadableCache<String, Bytes>,
     api_id: &String,
     user: &String,
     pass: Bytes,
@@ -60,7 +60,11 @@ pub fn check_basic_auth(
     check(cache, &AuthKind::Basic.format_key(api_id, user), pass)
 }
 
-fn check(cache: &AuthFilter, key: &String, expected: Bytes) -> Result<(), AuthError> {
+fn check(
+    cache: &dyn ReadableCache<String, Bytes>,
+    key: &String,
+    expected: Bytes,
+) -> Result<(), AuthError> {
     let actual = cache.get(key);
     if let Some(actual) = actual {
         if actual.eq(&expected) {
