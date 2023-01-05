@@ -1,27 +1,66 @@
+use std::fmt::{Display, Formatter};
 use crate::cache::ReadableCache;
-use crate::AuthFilter;
 use log;
 use proxy_wasm::types::Bytes;
 
-use super::API_KEY_KIND;
-use super::BASIC_KIND;
+use crate::hash::Hasher;
+
 
 pub enum AuthError {
     Unauthorized = 401,
     Forbidden = 403,
 }
 
+#[derive(Debug)]
 pub enum AuthKind {
+    Unknown,
     ApiKey,
     Basic,
     _JWT,
 }
 
+impl Default for AuthKind {
+    fn default() -> Self {
+        AuthKind::Unknown
+    }
+}
+
+impl Display for AuthKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthKind::Unknown => { f.write_str("Unknown") }
+            AuthKind::ApiKey => { f.write_str("ApiKey") }
+            AuthKind::Basic => { f.write_str("Basic") }
+            AuthKind::_JWT => { f.write_str("JWT") }
+        }
+    }
+}
+
 impl AuthKind {
+    pub const API_KEY_KIND: &'static str = "api_key";
+    pub const BASIC_KIND: &'static str = "basic";
+
+    pub fn from(s: &str) -> AuthKind {
+        match s {
+            Self::API_KEY_KIND => {
+                Self::ApiKey
+            }
+            Self::BASIC_KIND => {
+                Self::ApiKey
+            }
+            _ => {
+                Self::Unknown
+            }
+        }
+    }
+
     fn format_key(&self, api_id: &String, client_id: &String) -> String {
         match self {
-            AuthKind::ApiKey => Self::format(api_id, API_KEY_KIND, client_id),
-            AuthKind::Basic => Self::format(api_id, BASIC_KIND, client_id),
+            AuthKind::ApiKey => Self::format(api_id, Self::API_KEY_KIND, client_id),
+            AuthKind::Basic => Self::format(api_id, Self::BASIC_KIND, client_id),
+            AuthKind::Unknown => {
+                todo!()
+            }
             AuthKind::_JWT => {
                 todo!()
             }
@@ -43,11 +82,12 @@ pub fn check_api_key(
     cache: &dyn ReadableCache<String, Bytes>,
     api_id: &String,
     api_key: &String,
+    hasher: &dyn Hasher,
 ) -> Result<(), AuthError> {
     check(
         cache,
-        &AuthKind::ApiKey.format_key(api_id, api_key),
-        Bytes::from(api_key.as_bytes()),
+        &AuthKind::ApiKey.format_key(api_id, &hasher.hash_base64(api_key.as_bytes().to_vec())),
+        hasher.hash(api_key.as_bytes().to_vec())
     )
 }
 
@@ -56,8 +96,9 @@ pub fn check_basic_auth(
     api_id: &String,
     user: &String,
     pass: Bytes,
+    hasher: &dyn Hasher,
 ) -> Result<(), AuthError> {
-    check(cache, &AuthKind::Basic.format_key(api_id, user), pass)
+    check(cache, &AuthKind::Basic.format_key(api_id, user), hasher.hash(pass))
 }
 
 fn check(

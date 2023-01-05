@@ -82,7 +82,6 @@ It should be feasible.
 ## Next steps
 
 * Features / deps related
-  * API Key Hashing
   * JWT handling
   * try to generate protobuf struct in wasm-filter
 
@@ -93,7 +92,16 @@ It should be feasible.
    * use several envoys
    * extends envoy config to have 3 API, no auth, APIKey, Basic + TLS
 * Clean code
-  * refactor / cleanup / tests / docs
+  * tests / docs
+  * integration tests with proxy-wasm tests
+  * adopt a more "functional" style for results and options
+  * store filter config as serialized struct using serde to make storage more generic and limit calls to shared cache and wasm VM 
   * explore workspaces to manage two projects in one repo
   * Config as JSON (protobuf Struct)
-
+* Performance testing
+  * Test no auth vs. auth 
+    * API Key in header
+    * use nighthawk as backend (2 cores)
+    * hey! as frontend (4 cores)
+    * envoy with limited cores (2 cores)
+    * 100rps => 5000rps with jitter

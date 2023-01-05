@@ -10,14 +10,14 @@ use auth::{AuthError, AuthKind};
 use conf::{ApiKeyLocation, ServiceConfig, Type};
 
 use grpc::GRPC;
+use crate::hash::Hasher;
 
 mod auth;
 mod cache;
 mod conf;
 mod grpc;
+mod hash;
 
-const API_KEY_KIND: &str = "api_key";
-const BASIC_KIND: &str = "basic";
 
 proxy_wasm::main! {{
 
@@ -30,7 +30,8 @@ proxy_wasm::main! {{
     });
     proxy_wasm::set_http_context(|_context_id, root_context_id| -> Box<dyn HttpContext> {
         Box::new(AuthFilter{
-            root_context_id
+            root_context_id,
+            hasher: hash::HashAlg::SHA256.new()
         })
     });
 
@@ -44,6 +45,7 @@ pub struct AuthFilterConfig {
 
 pub struct AuthFilter {
     root_context_id: u32,
+    hasher:  Box<dyn Hasher>
 }
 
 struct RequestCredentials {
@@ -53,7 +55,9 @@ struct RequestCredentials {
     secret: Option<Bytes>,
 }
 
-impl Context for AuthFilter {}
+impl Context for AuthFilter {
+
+}
 
 impl HttpContext for AuthFilter {
     fn on_http_request_headers(&mut self, _num_headers: usize, _stream_code: bool) -> Action {
@@ -66,7 +70,7 @@ impl HttpContext for AuthFilter {
             // check it according to what it is
             match creds.kind {
                 AuthKind::ApiKey => {
-                    let res = auth::check_api_key(self, &creds.api_id, &creds.client_id);
+                    let res = auth::check_api_key(self, &creds.api_id, &creds.client_id, self.hasher.as_ref());
                     self.on_failed_send_forbidden(res)
                 }
                 AuthKind::Basic => {
@@ -75,7 +79,7 @@ impl HttpContext for AuthFilter {
                         &creds.api_id,
                         &creds.client_id,
                         creds.secret.unwrap(),
-                    );
+                        self.hasher.as_ref() );
                     self.on_failed_send_forbidden(res)
                 }
                 // any other situation is a fatal error
@@ -94,7 +98,9 @@ impl HttpContext for AuthFilter {
 }
 
 impl AuthFilter {
+
     fn extract_credentials(&self) -> Option<RequestCredentials> {
+
         let (is_api_key, api_id) = conf::is_api_key(self, self.root_context_id);
         if is_api_key {
             // safe to unwrap if true

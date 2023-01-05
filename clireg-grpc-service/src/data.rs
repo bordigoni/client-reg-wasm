@@ -1,3 +1,5 @@
+use sha2::{Digest, Sha256};
+
 use crate::registry::registry_response::Credential;
 use crate::registry::RegistryResponse;
 
@@ -8,20 +10,20 @@ pub fn load() -> Vec<RegistryResponse> {
                 Credential {
                     kind: String::from("api_key"),
                     owner: String::from("filter1"),
-                    client_id: String::from("ABCDEF"),
-                    secret: String::from("ABCDEF").into_bytes(),
+                    client_id: hash_base64(String::from("ABCDEF")),
+                    secret: hash(String::from("ABCDEF")),
                 },
                 Credential {
                     kind: String::from("basic"),
                     owner: String::from("filter2"),
                     client_id: String::from("admin"),
-                    secret: String::from("changeme").into_bytes(),
+                    secret: hash(String::from("changeme")),
                 },
             ],
             removals: vec![Credential {
                 kind: String::from("api_key"),
                 owner: String::from("filter1"),
-                client_id: String::from("GHIJKL"),
+                client_id: hash_base64(String::from("GHIJKL")),
                 secret: Vec::new(),
             }],
         },
@@ -29,8 +31,8 @@ pub fn load() -> Vec<RegistryResponse> {
             credentials: vec![Credential {
                 kind: String::from("api_key"),
                 owner: String::from("filter1"),
-                client_id: String::from("GHIJKL"),
-                secret: String::from("GHIJKL").into_bytes(),
+                client_id: hash_base64(String::from("GHIJKL")),
+                secret: hash(String::from("GHIJKL")),
             }],
             removals: vec![
                 Credential {
@@ -42,10 +44,18 @@ pub fn load() -> Vec<RegistryResponse> {
                 Credential {
                     kind: String::from("api_key"),
                     owner: String::from("filter1"),
-                    client_id: String::from("ABCDEF"),
+                    client_id: hash_base64(String::from("ABCDEF")),
                     secret: Vec::new(),
                 },
             ],
         },
     ]
+}
+
+fn hash(s: String) -> Vec<u8> {
+    Sha256::digest(s.into_bytes()).to_vec()
+}
+
+fn hash_base64(s: String) -> String {
+    base64::encode(hash(s))
 }

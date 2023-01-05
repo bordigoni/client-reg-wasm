@@ -1,11 +1,9 @@
 use json;
 use json::JsonValue;
 use proxy_wasm::types::Bytes;
+use crate::auth::AuthKind;
 
 use crate::cache::{ReadableCache, WritableCache};
-
-use super::API_KEY_KIND;
-use super::BASIC_KIND;
 
 pub fn parse_and_store(
     cache: &mut dyn WritableCache<String, Bytes>,
@@ -83,7 +81,7 @@ fn parse_and_store_creds_config(
     } else {
         panic!("creds.kind is missing for context: {}", context_id)
     }
-    if kind.eq(API_KEY_KIND) {
+    if kind.eq(AuthKind::API_KEY_KIND) {
         if let JsonValue::Short(is_in) = &conf["in"] {
             let in_key = as_api_key_in_key(api_id.as_str());
             cache.put(in_key, Some(String::from(*is_in).into_bytes()));
@@ -94,7 +92,7 @@ fn parse_and_store_creds_config(
         }
     }
 
-    if kind.eq(BASIC_KIND) {
+    if kind.eq(AuthKind::BASIC_KIND) {
         let key = as_basic_key(api_id.as_str());
         cache.put(key, Some(vec![]));
     }
@@ -106,14 +104,14 @@ pub fn is_api_key(
     cache: &dyn ReadableCache<String, Bytes>,
     context_id: u32,
 ) -> (bool, Option<String>) {
-    is_auth_of_kind(cache, context_id, API_KEY_KIND)
+    is_auth_of_kind(cache, context_id, AuthKind::API_KEY_KIND)
 }
 
 pub fn is_basic(
     cache: &dyn ReadableCache<String, Bytes>,
     context_id: u32,
 ) -> (bool, Option<String>) {
-    is_auth_of_kind(cache, context_id, BASIC_KIND)
+    is_auth_of_kind(cache, context_id, AuthKind::BASIC_KIND)
 }
 
 fn is_auth_of_kind(
@@ -216,7 +214,7 @@ fn as_basic_key(api_id: &str) -> String {
     let mut key = String::new();
     key.push_str(api_id);
     key.push_str(".");
-    key.push_str(BASIC_KIND);
+    key.push_str(AuthKind::BASIC_KIND);
     key
 }
 
@@ -224,7 +222,7 @@ fn as_api_key_key(api_id: &str, field_name: &str) -> String {
     let mut key = String::new();
     key.push_str(api_id);
     key.push_str(".");
-    key.push_str(API_KEY_KIND);
+    key.push_str(AuthKind::API_KEY_KIND);
     key.push_str(".");
     key.push_str(field_name);
     key
