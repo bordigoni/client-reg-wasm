@@ -69,7 +69,6 @@ mod tests {
     use proxy_wasm::types::Bytes;
     use super::HashAlg;
     use hex_literal::hex;
-    use crate::hash;
 
     #[test]
     fn in_registry() {

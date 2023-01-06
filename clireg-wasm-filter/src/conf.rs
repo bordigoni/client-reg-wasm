@@ -1,138 +1,86 @@
+use std::time::Duration;
+
 use json;
 use json::JsonValue;
 use proxy_wasm::types::Bytes;
-use crate::auth::AuthKind;
+use serde::{Deserialize, Serialize};
+use serde_cbor;
 
+use crate::auth::AuthKind;
 use crate::cache::{ReadableCache, WritableCache};
 
-pub fn parse_and_store(
-    cache: &mut dyn WritableCache<String, Bytes>,
-    config: String,
-    context_id: u32,
-) -> Result<Type, String> {
-    let json = json::parse(config.as_str());
-    match json {
-        Err(err) => {
-            return Err(format!(
-                "config for context {} cannot be parsed: {}",
-                context_id, err
-            ));
-        }
-        Ok(json) => {
-            if let JsonValue::Short(config_type) = &json["config"] {
-                match from(config_type) {
-                    Type::Service(_) => parse_and_store_service_config(&json["service"]),
-                    Type::Creds => parse_and_store_creds_config(cache, &json["creds"], context_id),
-                    Type::Unknown => Err(format!(
-                        "config with value '{}' is not supported",
-                        config_type
-                    )),
-                }
-            } else {
-                Err(format!(
-                    "\"config\" attribute cannot be found for context:{} in config: {}",
-                    context_id, config
-                ))
-            }
-        }
-    }
+const DEFAULT_TICK_PERIOD_SEC: u64 = 60;
+
+#[derive(Debug, PartialEq)]
+pub enum Type {
+    Service(ServiceConfig),
+    Creds(CredsConfig),
+    Unknown,
 }
 
-fn parse_and_store_service_config(conf: &JsonValue) -> Result<Type, String> {
-    // gRPC cluster
-    if let JsonValue::Short(h) = &conf["cluster"] {
-        Ok(Type::Service(ServiceConfig {
-            cluster: h.to_string(),
-        }))
-    } else {
-        return Err(format!("service.cluster not found or not a String"));
-    }
-}
-
-fn parse_and_store_creds_config(
-    cache: &mut dyn WritableCache<String, Bytes>,
-    conf: &JsonValue,
-    context_id: u32,
-) -> Result<Type, String> {
-    let mut api_id = String::new();
-
-    // set mapping from context to api_id
-    if let JsonValue::Short(api_id_short) = &conf["api_id"] {
-        log::debug!("binding api_id {} to ctx {}", api_id_short, context_id);
-        api_id.push_str(String::from(*api_id_short).as_str());
-        cache.put(
-            as_context_key(context_id),
-            Some(api_id.clone().into_bytes()),
-        );
-    } else {
-        panic!("creds.api_id is missing for context: {}", context_id)
-    }
-
-    let mut kind = String::new();
-    // set mapping from api_id to to cred kind
-
-    if let JsonValue::Short(kind_str) = &conf["kind"] {
-        kind.push_str(kind_str);
-        log::debug!("binding api_id {} to kind {}", api_id, &kind);
-        cache.put(
-            as_api_id_key(api_id.as_str()),
-            Some(kind.clone().into_bytes()),
-        );
-    } else {
-        panic!("creds.kind is missing for context: {}", context_id)
-    }
-    if kind.eq(AuthKind::API_KEY_KIND) {
-        if let JsonValue::Short(is_in) = &conf["in"] {
-            let in_key = as_api_key_in_key(api_id.as_str());
-            cache.put(in_key, Some(String::from(*is_in).into_bytes()));
-        }
-        if let JsonValue::Short(name) = &conf["name"] {
-            let name_key = as_api_key_name_key(api_id.as_str());
-            cache.put(name_key, Some(String::from(*name).into_bytes()));
-        }
-    }
-
-    if kind.eq(AuthKind::BASIC_KIND) {
-        let key = as_basic_key(api_id.as_str());
-        cache.put(key, Some(vec![]));
-    }
-
-    Ok(Type::Creds)
-}
-
-pub fn is_api_key(
-    cache: &dyn ReadableCache<String, Bytes>,
-    context_id: u32,
-) -> (bool, Option<String>) {
-    is_auth_of_kind(cache, context_id, AuthKind::API_KEY_KIND)
-}
-
-pub fn is_basic(
-    cache: &dyn ReadableCache<String, Bytes>,
-    context_id: u32,
-) -> (bool, Option<String>) {
-    is_auth_of_kind(cache, context_id, AuthKind::BASIC_KIND)
-}
-
-fn is_auth_of_kind(
-    cache: &dyn ReadableCache<String, Bytes>,
-    context_id: u32,
-    expected_kind: &str,
-) -> (bool, Option<String>) {
-    if let Some(api_id_bytes) = cache.get(&as_context_key(context_id)) {
-        let api_id = String::from_utf8(api_id_bytes.to_vec()).unwrap();
-        if let Some(kind) = cache.get(&as_api_id_key(api_id.as_str())) {
-            return (kind.as_slice().eq(expected_kind.as_bytes()), Some(api_id));
+impl Type {
+    fn from(type_str: &str) -> Type {
+        if type_str == "service" {
+            Type::Service(Default::default())
+        } else if type_str == "creds" {
+            Type::Creds(Default::default())
         } else {
-            log::error!("no cache entry for {}", as_api_id_key(api_id.as_str()))
+            Type::Unknown
         }
-    } else {
-        log::error!("no cache entry for {}", as_context_key(context_id))
     }
-    (false, None)
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug, PartialEq)]
+pub struct ServiceConfig {
+    pub cluster: String,
+    pub tick_period: Duration,
+}
+
+impl Default for ServiceConfig {
+    fn default() -> Self {
+        ServiceConfig {
+            cluster: String::default(),
+            tick_period: Duration::from_secs(DEFAULT_TICK_PERIOD_SEC),
+        }
+    }
+}
+
+#[derive(Default, Debug, PartialEq, Deserialize, Serialize)]
+pub struct CredsConfig {
+    pub api_id: String,
+    pub kind: AuthKind,
+    pub spec: CredSpec,
+}
+
+impl CredsConfig {
+    pub fn has_values(&self) -> bool {
+        match self.spec {
+            CredSpec::Unknown => false,
+            _ => true,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub enum CredSpec {
+    Unknown,
+    Basic,
+    ApiKey(ApiKeySpec),
+}
+
+impl Default for CredSpec {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+#[derive(Default, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ApiKeySpec {
+    pub is_in: ApiKeyLocation,
+    pub name: String,
+}
+
+#[derive(PartialEq, Debug, Serialize, Deserialize)]
 pub enum ApiKeyLocation {
     Header,
     QueryParam,
@@ -151,132 +99,188 @@ impl ApiKeyLocation {
     }
 }
 
-pub struct ApiKeySpec {
-    pub is_in: ApiKeyLocation,
-    pub name: String,
+impl Default for ApiKeyLocation {
+    fn default() -> Self {
+        ApiKeyLocation::Unknown(String::default())
+    }
 }
 
-pub fn get_api_key_spec(
-    cache: &dyn ReadableCache<String, Bytes>,
-    api_id: &str,
-) -> Result<ApiKeySpec, String> {
-    let is_in = cache.get(&as_api_key_in_key(api_id));
-    let name = cache.get(&as_api_key_name_key(api_id));
+pub fn parse_config(config: &str, context_id: u32) -> Result<Type, String> {
+    let json = json::parse(config);
+    match json {
+        Err(err) => {
+            return Err(format!(
+                "config for context {} cannot be parsed: {}",
+                context_id, err
+            ));
+        }
+        Ok(json) => {
+            if let JsonValue::Short(config_type) = &json["config"] {
+                match Type::from(config_type) {
+                    Type::Service(_) => parse_service_config(&json["service"]),
+                    Type::Creds(_) => parse_creds_config(&json["creds"], context_id),
+                    Type::Unknown => Err(format!(
+                        "config with value '{}' is not supported",
+                        config_type
+                    )),
+                }
+            } else {
+                Err(format!(
+                    "\"config\" attribute cannot be found for context:{} in config: {}",
+                    context_id, config
+                ))
+            }
+        }
+    }
+}
 
-    if let Some(is_in) = is_in {
-        if let Some(name) = name {
-            // we set it our self no need to check
-            let name_str = String::from_utf8(name).unwrap();
-            let is_in_str = String::from_utf8(is_in).unwrap();
-            Ok(ApiKeySpec {
-                is_in: ApiKeyLocation::from(is_in_str),
-                name: name_str,
-            })
-        } else {
-            Err(format!("cannot find entry 'name' for {}.api_key'", api_id))
+fn parse_service_config(conf: &JsonValue) -> Result<Type, String> {
+    let mut config = ServiceConfig::default();
+
+    // gRPC cluster
+    if let JsonValue::Short(cluster_short) = &conf["cluster"] {
+        config.cluster = cluster_short.to_string();
+    } else {
+        return Err(format!("service.cluster not found or not a String"));
+    }
+
+    // non default duration
+    if let JsonValue::Number(tick_period) = &conf["tick_period"] {
+        if let Some(duration) = tick_period
+            .as_fixed_point_u64(0)
+            .map(|d| Duration::from_secs(d))
+        {
+            config.tick_period = duration;
+        }
+    }
+
+    Ok(Type::Service(config))
+}
+
+fn parse_creds_config(conf: &JsonValue, context_id: u32) -> Result<Type, String> {
+    let mut api_id = String::new();
+    if let JsonValue::Short(api_id_short) = &conf["api_id"] {
+        api_id.push_str(api_id_short.as_str());
+    } else {
+        return Err(format!(
+            "creds.api_id is missing or not a string for context: {}",
+            context_id
+        ));
+    }
+
+    let mut kind = String::new();
+    if let JsonValue::Short(kind_str) = &conf["kind"] {
+        kind.push_str(kind_str);
+    } else {
+        return Err(format!(
+            "creds.kind is missing or not a string for context: {}",
+            context_id
+        ));
+    }
+
+    let mut config = CredsConfig {
+        api_id,
+        kind: AuthKind::from(kind.as_str()),
+        spec: CredSpec::Unknown,
+    };
+    match config.kind {
+        AuthKind::ApiKey => {
+            let mut api_key_spec = ApiKeySpec::default();
+            if let JsonValue::Short(is_in) = &conf["in"] {
+                api_key_spec.is_in = ApiKeyLocation::from(is_in.to_string());
+            } else {
+                return Err(format!(
+                    "creds.in is missing or not a string for context: {}",
+                    context_id
+                ));
+            }
+            if let JsonValue::Short(name) = &conf["name"] {
+                api_key_spec.name = name.to_string()
+            } else {
+                return Err(format!(
+                    "creds.name is missing or not a string for context: {}",
+                    context_id
+                ));
+            }
+            config.spec = CredSpec::ApiKey(api_key_spec);
+            Ok(Type::Creds(config))
+        }
+        AuthKind::Basic => {
+            config.spec = CredSpec::Basic;
+            Ok(Type::Creds(config))
+        }
+        _ => Err(format!("creds.kind is not expected or supported: {}", kind)),
+    }
+}
+
+pub fn pull_filter_config(
+    cache: &dyn ReadableCache<String, Bytes>,
+    context_id: u32,
+) -> Result<CredsConfig, String> {
+    if let Some(bytes) = cache.get(&to_cache_key(context_id)) {
+        match serde_cbor::from_slice(bytes.as_slice()) {
+            Ok(config) => Ok(config),
+            Err(e) => Err(e.to_string()),
         }
     } else {
-        Err(format!("cannot find entry 'in' for {}.api_key'", api_id))
+        Err(format!(
+            "no filter config found for context: {}",
+            context_id
+        ))
     }
 }
 
-#[derive(Default, Debug)]
-pub struct ServiceConfig {
-    pub cluster: String,
+pub fn store_filter_config(
+    cache: &mut dyn WritableCache<String, Bytes>,
+    context_id: u32,
+    creds: CredsConfig,
+) -> bool {
+    return match serde_cbor::to_vec(&creds) {
+        Ok(bytes) => {
+            cache.put(to_cache_key(context_id), Some(bytes));
+            true
+        }
+        Err(err) => {
+            log::error!("could not serialize the config: {}", err);
+            false
+        }
+    };
 }
 
-#[derive(Debug)]
-pub enum Type {
-    Service(ServiceConfig),
-    Creds,
-    Unknown,
-}
-
-fn from(type_str: &str) -> Type {
-    if type_str == "service" {
-        Type::Service(Default::default())
-    } else if type_str == "creds" {
-        Type::Creds
-    } else {
-        Type::Unknown
-    }
-}
-
-fn as_api_key_in_key(api_id: &str) -> String {
-    as_api_key_key(api_id, "in")
-}
-
-fn as_api_key_name_key(api_id: &str) -> String {
-    as_api_key_key(api_id, "name")
-}
-
-fn as_basic_key(api_id: &str) -> String {
-    let mut key = String::new();
-    key.push_str(api_id);
-    key.push_str(".");
-    key.push_str(AuthKind::BASIC_KIND);
-    key
-}
-
-fn as_api_key_key(api_id: &str, field_name: &str) -> String {
-    let mut key = String::new();
-    key.push_str(api_id);
-    key.push_str(".");
-    key.push_str(AuthKind::API_KEY_KIND);
-    key.push_str(".");
-    key.push_str(field_name);
-    key
-}
-
-fn as_context_key(id: u32) -> String {
+fn to_cache_key(context_id: u32) -> String {
     let mut key = String::from("context.");
-    key.push_str(id.to_string().as_str());
-    key
-}
-
-fn as_api_id_key(api_id: &str) -> String {
-    let mut key = String::from("api_id.");
-    key.push_str(api_id);
+    key.push_str(context_id.to_string().as_str());
+    key.push_str(".config");
     key
 }
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::BorrowMut;
-    use std::collections::HashMap;
+    use std::time::Duration;
 
-    use proxy_wasm::types::Bytes;
-
-    use crate::cache::{ReadableCache, WritableCache};
+    use crate::auth::AuthKind;
     use crate::conf;
-    use crate::conf::{get_api_key_spec, ApiKeyLocation, Type};
+    use crate::conf::Type::{Creds, Service, Unknown};
+    use crate::conf::{ApiKeyLocation, ApiKeySpec, CredSpec, CredsConfig, ServiceConfig};
 
-    struct MockCache {
-        data: HashMap<String, Bytes>,
-    }
+    #[test]
+    fn serialization() {
+        let ser = CredsConfig {
+            api_id: "foo".to_string(),
+            kind: AuthKind::ApiKey,
+            spec: CredSpec::ApiKey(ApiKeySpec {
+                is_in: ApiKeyLocation::Header,
+                name: "api-key".to_string(),
+            }),
+        };
 
-    impl MockCache {
-        fn new() -> MockCache {
-            MockCache {
-                data: HashMap::new(),
-            }
-        }
-    }
+        let bytes = serde_cbor::to_vec(&ser).unwrap();
+        assert_ne!(0, bytes.len());
 
-    impl WritableCache<String, Bytes> for MockCache {
-        fn put(&mut self, key: String, value: Option<Bytes>) {
-            self.data.insert(key, value.unwrap());
-        }
-
-        fn delete(&mut self, key: String) {
-            self.data.remove(&key);
-        }
-    }
-
-    impl ReadableCache<String, Bytes> for MockCache {
-        fn get(&self, key: &String) -> Option<Bytes> {
-            self.data.get(key).map(|bytes| bytes.clone())
-        }
+        let des: CredsConfig = serde_cbor::from_slice(&bytes).unwrap();
+        assert_eq!(&ser.api_id, &des.api_id);
+        assert_eq!(&ser.kind, &des.kind);
+        assert_eq!(&ser.spec, &des.spec);
     }
 
     #[test]
@@ -292,39 +296,18 @@ mod tests {
     }
 }
 "#;
-
-        let mut cache = MockCache::new();
-        conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0).unwrap();
-
-        let api_id = cache.data.get(&String::from("context.0")).unwrap();
-        assert_eq!(to_str(api_id).as_str(), "filter2");
-
-        {
-            let kind = cache.data.get(&String::from("api_id.filter2")).unwrap();
-            assert_eq!(to_str(kind).as_str(), "api_key");
-        }
-        {
-            let in_value = cache.data.get(&String::from("filter2.api_key.in")).unwrap();
-            assert_eq!(to_str(in_value).as_str(), "header");
-        }
-        {
-            let name = cache
-                .data
-                .get(&String::from("filter2.api_key.name"))
-                .unwrap();
-            assert_eq!(to_str(name).as_str(), "x-api-key");
-        }
-
-        assert!(conf::is_api_key(&cache, 0).0);
-        assert!(!conf::is_basic(&cache, 0).0);
+        let config = conf::parse_config(payload, 0).unwrap();
         assert_eq!(
-            conf::is_api_key(&cache, 0).1.unwrap(),
-            String::from("filter2")
+            config,
+            Creds(CredsConfig {
+                api_id: "filter2".to_string(),
+                kind: AuthKind::ApiKey,
+                spec: CredSpec::ApiKey(ApiKeySpec {
+                    is_in: ApiKeyLocation::Header,
+                    name: "x-api-key".to_string()
+                })
+            })
         );
-
-        let spec = get_api_key_spec(&cache, to_str(api_id).as_str());
-        assert_eq!(spec.as_ref().unwrap().is_in, ApiKeyLocation::Header);
-        assert_eq!(spec.as_ref().unwrap().name, "x-api-key")
     }
 
     #[test]
@@ -339,24 +322,34 @@ mod tests {
 }
 "#;
 
-        let mut cache = MockCache::new();
-        conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0).unwrap();
-
-        {
-            let api_id = cache.data.get(&String::from("context.0")).unwrap();
-            assert_eq!(to_str(api_id).as_str(), "filter1");
-        }
-
-        {
-            let kind = cache.data.get(&String::from("api_id.filter1")).unwrap();
-            assert_eq!(to_str(kind).as_str(), "basic");
-        }
-
-        assert!(conf::is_basic(&cache, 0).0);
-        assert!(!conf::is_api_key(&cache, 0).0);
+        let config = conf::parse_config(payload, 0).unwrap();
         assert_eq!(
-            conf::is_basic(&cache, 0).1.unwrap(),
-            String::from("filter1")
+            config,
+            Creds(CredsConfig {
+                api_id: "filter1".to_string(),
+                kind: AuthKind::Basic,
+                spec: CredSpec::Basic
+            })
+        );
+    }
+
+    #[test]
+    fn service_conf_test_default() {
+        let payload = r#"
+{
+  "config": "service",
+  "service": {
+    "cluster": "test"
+  }
+}
+"#;
+        let config = conf::parse_config(payload, 0).unwrap();
+        assert_eq!(
+            config,
+            Service(ServiceConfig {
+                cluster: "test".to_string(),
+                tick_period: Duration::from_secs(60)
+            })
         );
     }
 
@@ -366,27 +359,152 @@ mod tests {
 {
   "config": "service",
   "service": {
-    "cluster": "test"
+    "cluster": "test",
+    "tick_period": 30
   }
 }
 "#;
-
-        let json = json::parse(payload);
-        println!("{:#?}", json);
-
-        let mut cache = MockCache::new();
-
-        match conf::parse_and_store(cache.borrow_mut(), String::from(payload), 0).unwrap() {
-            Type::Service(conf) => {
-                assert_eq!(conf.cluster, "test");
-            }
-            t => {
-                panic!("expected Type::Service, got: {:?}", t)
-            }
-        }
+        let config = conf::parse_config(payload, 0).unwrap();
+        assert_eq!(
+            config,
+            Service(ServiceConfig {
+                cluster: "test".to_string(),
+                tick_period: Duration::from_secs(30)
+            })
+        );
     }
 
-    fn to_str(b: &Bytes) -> String {
-        String::from_utf8(b.clone()).unwrap()
+    #[test]
+    #[should_panic]
+    fn unknown_type() {
+        let payload = r#"
+{
+    "config": "foo",
+    "creds": {
+        "kind":"api_key",
+        "api_id": "filter2",
+        "in": "header",
+        "name": "x-api-key"
+    }
+}
+"#;
+        let config = conf::parse_config(payload, 0).unwrap();
+        assert_eq!(config, Unknown);
+    }
+
+    #[test]
+    #[should_panic]
+    fn unknown_kind() {
+        let payload = r#"
+{
+    "config": "creds",
+    "creds": {
+        "kind":"foo",
+        "api_id": "filter2",
+        "in": "header",
+        "name": "x-api-key"
+    }
+}
+"#;
+        conf::parse_config(payload, 0).unwrap();
+    }
+
+    #[test]
+    fn unknown_header_location() {
+        let payload = r#"
+{
+    "config": "creds",
+    "creds": {
+        "kind":"api_key",
+        "api_id": "filter2",
+        "in": "foo",
+        "name": "x-api-key"
+    }
+}
+"#;
+        let config = conf::parse_config(payload, 0).unwrap();
+        assert_eq!(
+            config,
+            Creds(CredsConfig {
+                api_id: "filter2".to_string(),
+                kind: AuthKind::ApiKey,
+                spec: CredSpec::ApiKey(ApiKeySpec {
+                    is_in: ApiKeyLocation::Unknown("foo".to_string()),
+                    name: "x-api-key".to_string()
+                })
+            })
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_config() {
+        let payload = r#"
+{
+    "config": true,
+    "creds": {
+        "kind": "api_key",
+        "api_id": "filter2",
+        "in": "header",
+        "name": "x-api-key"
+    }
+}
+"#;
+        conf::parse_config(payload, 0).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_config2() {
+        let payload = r#"
+{
+    "config": "creds",
+    "creds": {
+        "kind":true,
+        "api_id": "filter2",
+        "in": "header",
+        "name": "x-api-key"
+    }
+}
+"#;
+        conf::parse_config(payload, 0).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_config3() {
+        let payload = r#"
+{
+    "config": "service",
+    "creds": {
+        "kind":"api_key",
+        "api_id": "filter2",
+        "in": "header",
+        "name": "x-api-key"
+    }
+}
+"#;
+        conf::parse_config(payload, 0).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn wrong_config4() {
+        let payload = r#"
+{
+    "config": "creds",
+    "creds": {
+        
+    }
+}
+"#;
+        conf::parse_config(payload, 0).unwrap();
+    }
+
+    #[test]
+    #[should_panic]
+    fn bad_json() {
+        let payload = "{this is not JSON !!}[}";
+        conf::parse_config(payload, 0).unwrap();
     }
 }

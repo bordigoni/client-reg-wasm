@@ -95,7 +95,6 @@ It should be feasible.
   * tests / docs
   * integration tests with proxy-wasm tests
   * adopt a more "functional" style for results and options
-  * store filter config as serialized struct using serde to make storage more generic and limit calls to shared cache and wasm VM 
   * explore workspaces to manage two projects in one repo
   * Config as JSON (protobuf Struct)
 * Performance testing

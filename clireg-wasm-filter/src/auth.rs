@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 use crate::cache::ReadableCache;
 use log;
 use proxy_wasm::types::Bytes;
-
+use serde::{Serialize, Deserialize};
 use crate::hash::Hasher;
 
 
@@ -11,7 +11,7 @@ pub enum AuthError {
     Forbidden = 403,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 pub enum AuthKind {
     Unknown,
     ApiKey,
@@ -46,7 +46,7 @@ impl AuthKind {
                 Self::ApiKey
             }
             Self::BASIC_KIND => {
-                Self::ApiKey
+                Self::Basic
             }
             _ => {
                 Self::Unknown
