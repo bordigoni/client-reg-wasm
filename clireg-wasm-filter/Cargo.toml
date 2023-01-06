@@ -25,9 +25,3 @@ hex-literal = "0.3"
 [lib]
 crate-type = ["cdylib"]
 
-[profile.release]
-lto = true
-opt-level = 3
-codegen-units = 1
-panic = "abort"
-strip = "debuginfo"

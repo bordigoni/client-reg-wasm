@@ -74,11 +74,6 @@ If you don't specify API Key header you'll end up with a 401.
 
 **Yes I know two authentication for one API is dumb but, it was the simplest way to test several instances of the filter.**
 
-## Code 
-
-I still need to enhance the coding experience, you need to open both directory in separate intellij in order to have it to looked compilable for now. 
-It should be feasible.
-
 ## Next steps
 
 * Features / deps related
@@ -95,7 +90,6 @@ It should be feasible.
   * tests / docs
   * integration tests with proxy-wasm tests
   * adopt a more "functional" style for results and options
-  * explore workspaces to manage two projects in one repo
   * Config as JSON (protobuf Struct)
 * Performance testing
   * Test no auth vs. auth 
