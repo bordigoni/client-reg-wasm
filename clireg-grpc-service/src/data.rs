@@ -27,28 +27,28 @@ pub fn load() -> Vec<RegistryResponse> {
                 secret: Vec::new(),
             }],
         },
-        RegistryResponse {
-            credentials: vec![Credential {
-                kind: String::from("api_key"),
-                owner: String::from("filter1"),
-                client_id: hash_base64(String::from("GHIJKL")),
-                secret: hash(String::from("GHIJKL")),
-            }],
-            removals: vec![
-                Credential {
-                    kind: String::from("basic"),
-                    owner: String::from("filter2"),
-                    client_id: String::from("admin"),
-                    secret: Vec::new(),
-                },
-                Credential {
-                    kind: String::from("api_key"),
-                    owner: String::from("filter1"),
-                    client_id: hash_base64(String::from("ABCDEF")),
-                    secret: Vec::new(),
-                },
-            ],
-        },
+        // RegistryResponse {
+        //     credentials: vec![Credential {
+        //         kind: String::from("api_key"),
+        //         owner: String::from("filter1"),
+        //         client_id: hash_base64(String::from("GHIJKL")),
+        //         secret: hash(String::from("GHIJKL")),
+        //     }],
+        //     removals: vec![
+        //         Credential {
+        //             kind: String::from("basic"),
+        //             owner: String::from("filter2"),
+        //             client_id: String::from("admin"),
+        //             secret: Vec::new(),
+        //         },
+        //         Credential {
+        //             kind: String::from("api_key"),
+        //             owner: String::from("filter1"),
+        //             client_id: hash_base64(String::from("ABCDEF")),
+        //             secret: Vec::new(),
+        //         },
+        //     ],
+        // },
     ]
 }
 

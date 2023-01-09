@@ -89,7 +89,7 @@ impl RegistryHandler {
                     }
                 }
 
-                thread::sleep(Duration::from_secs(10));
+                thread::sleep(Duration::from_secs(30));
 
                 // next or start over
                 i += 1;

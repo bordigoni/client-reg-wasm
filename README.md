@@ -74,6 +74,16 @@ If you don't specify API Key header you'll end up with a 401.
 
 **Yes I know two authentication for one API is dumb but, it was the simplest way to test several instances of the filter.**
 
+## Perf testing 
+
+* gRPC service: see above
+* envoy & backend (nighthawk): `docker-compose -f docker-compose-perf.yaml up`
+* client: 
+  * single calls:
+    * curl -kv --resolve "apikey.ampgw.axway.com:8443:127.0.0.1" "https://apikey.ampgw.axway.com:8443" -H 'X-API-KEY: ABCDEF'
+    * curl -kv --resolve "basic.ampgw.axway.com:8443:127.0.0.1" "https://basic.ampgw.axway.com:8443" -H 'Authorization: Basic YWRtaW46Y2hhbmdlbWU='
+    * curl -kv --resolve "noauth.ampgw.axway.com:8443:127.0.0.1" "https://noauth.ampgw.axway.com:8443"
+
 ## Next steps
 
 * Features / deps related
@@ -85,7 +95,6 @@ If you don't specify API Key header you'll end up with a 401.
 * Envoy related
    * understand why messages are consumed 2 by 2
    * use several envoys
-   * extends envoy config to have 3 API, no auth, APIKey, Basic + TLS
 * Clean code
   * tests / docs
   * integration tests with proxy-wasm tests
@@ -98,3 +107,4 @@ If you don't specify API Key header you'll end up with a 401.
     * hey! as frontend (4 cores)
     * envoy with limited cores (2 cores)
     * 100rps => 5000rps with jitter
+

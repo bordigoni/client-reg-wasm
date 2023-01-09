@@ -76,11 +76,12 @@ pub fn handle_receive(cache: &mut dyn WritableCache<String, Bytes>, message: Opt
                         Some(cred.secret.clone()),
                     );
                 }
+                log::info!("Auth cache updated: new/updated: {}, removed: {}", &response.credentials.len(), &response.removals.len())
             }
             Err(err) => log::error!("cannot decode gRPC message: {}", err),
         }
     } else {
-        log::warn!("no gRPC message")
+        log::debug!("Got empty gRPC message")
     }
 }
 

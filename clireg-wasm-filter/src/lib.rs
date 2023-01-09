@@ -148,15 +148,15 @@ impl AuthFilter {
                 // ugly as hell won't keep it so...
                 if let Some(auth_header) = self.get_http_request_header("Authorization") {
                     if let Some((basic, user_pwd_b64)) = auth_header.split_once(' ') {
-                        if basic.to_ascii_lowercase().eq("basic") {
+                        if basic.eq_ignore_ascii_case("basic") {
                             let user_pwd_bytes = base64::decode(user_pwd_b64);
                             if let Ok(user_pwd) = String::from_utf8(user_pwd_bytes.unwrap()) {
                                 if let Some((user, pass)) = user_pwd.split_once(':') {
                                     return Some(RequestCredentials {
                                         kind: AuthKind::Basic,
                                         api_id: api_id.clone(),
-                                        client_id: String::from(user),
-                                        secret: Some(Vec::from(pass)),
+                                        client_id: user.to_string(),
+                                        secret: Some(pass.as_bytes().to_vec()),
                                     });
                                 }
                             }

@@ -1,0 +1,26 @@
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.24-latest
+    hostname: envoy
+    volumes:
+      - ./envoy-perf.yaml:/etc/envoy/envoy-perf.yaml
+      - ../target/wasm32-unknown-unknown/release:/etc/envoy/proxy-wasm-plugins
+    command:
+      - "envoy"
+      - "-c"
+      - "/etc/envoy/envoy-perf.yaml"
+      - "--base-id 0"
+    network_mode: host
+    cpu_count: 2
+  nighthawk:
+    image: envoyproxy/nighthawk-dev
+    hostname: nighthawk
+    volumes:
+      - ./nighthawk-perf.yaml:/etc/envoy/nighthawk-perf.yaml
+    command:
+      - "/usr/local/bin/nighthawk_test_server"
+      - "-c"
+      - "/etc/envoy/nighthawk-perf.yaml"
+      - "--base-id 1"
+    cpu_count: 2
+    network_mode: host
