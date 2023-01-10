@@ -1,3 +1,4 @@
+version: "3"
 services:
   envoy:
     image: envoyproxy/envoy:v1.24-latest
@@ -10,8 +11,12 @@ services:
       - "-c"
       - "/etc/envoy/envoy-perf.yaml"
       - "--base-id 0"
+      - "--concurrency 4"
     network_mode: host
-    cpu_count: 2
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
   nighthawk:
     image: envoyproxy/nighthawk-dev
     hostname: nighthawk
@@ -22,5 +27,9 @@ services:
       - "-c"
       - "/etc/envoy/nighthawk-perf.yaml"
       - "--base-id 1"
-    cpu_count: 2
+      - "--concurrency 4"
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
     network_mode: host

@@ -38,12 +38,13 @@ Then it delivers a message every ten seconds.
 2. api_key GHIJKL + removal of the above
 3. loop forever
 
-There is maybe a bug in Envoy (or misconfiguration or both), messages are delivered 2 by 2. 
-So the server sends an empty response along with the actual response to allow envoy to see it.
+There is maybe a bug in Envoy (or an odd behaviour), messages are delivered 2 by 2 
+*only when there 2 wasm filter in the same filter chain, supposedly on the same VM*.
+So the gRPC server sends an empty response (no op in wasm filter) just after the actual response to allow envoy to see it.
 
 ### protobuf (inc. docs)
 
-You can find the protobuf in `proto/` 
+You can find the documented protobuf in `proto/` 
 
 ## Run
 
@@ -74,15 +75,18 @@ If you don't specify API Key header you'll end up with a 401.
 
 **Yes I know two authentication for one API is dumb but, it was the simplest way to test several instances of the filter.**
 
-## Perf testing 
-
-* gRPC service: see above
-* envoy & backend (nighthawk): `docker-compose -f docker-compose-perf.yaml up`
-* client: 
+## Run perf test
+* gRPC service: see above (use of data.rs/many_creds() function so that no credentials removal occurs and on 403 can happen, and get up to a 1 000 000 creds.
+* envoy & backend (nighthawk sending 10 bytes): `docker-compose --compatibility -f docker-compose-perf.yaml up`
+* client (add those hosts to /etc/hosts `hey` does not have a dynamic local DNS cache like cURL with --resolve) :
   * single calls:
-    * curl -kv --resolve "apikey.ampgw.axway.com:8443:127.0.0.1" "https://apikey.ampgw.axway.com:8443" -H 'X-API-KEY: ABCDEF'
-    * curl -kv --resolve "basic.ampgw.axway.com:8443:127.0.0.1" "https://basic.ampgw.axway.com:8443" -H 'Authorization: Basic YWRtaW46Y2hhbmdlbWU='
-    * curl -kv --resolve "noauth.ampgw.axway.com:8443:127.0.0.1" "https://noauth.ampgw.axway.com:8443"
+    * `curl -kv "https://apikey.ampgw.axway.com:8443/" -H 'X-API-KEY: ABCDEF'`
+    * `curl -kv "https://basic.ampgw.axway.com:8443/" -H 'Authorization: Basic YWRtaW46Y2hhbmdlbWU='`
+    * `curl -kv "https://noauth.ampgw.axway.com:8443/"`
+  * bulk load (install hey: https://github.com/rakyll/hey)
+    * `hey -c <users> -q <qps/user> -z 1m -cpus 4 -H 'X-API-KEY: ABCDEF' -m GET -host apikey.ampgw.axway.com "https://apikey.ampgw.axway.com:8443/"`
+    * `hey -c <users> -q <qps/user> -z 1m -cpus 4 -H 'Authorization: Basic YWRtaW46Y2hhbmdlbWU=' -m GET -host basic.ampgw.axway.com "https://basic.ampgw.axway.com:8443/"`
+    * `hey -c <users> -q <qps/user> -z 1m -cpus 4 -m GET -host noauth.ampgw.axway.com "https://noauth.ampgw.axway.com:8443/"`
 
 ## Next steps
 
@@ -92,19 +96,13 @@ If you don't specify API Key header you'll end up with a 401.
 
     (cannot work for now at it brings tonic in and wasm build fails with too many code that cannot be compiled with the wasm target)
   * allow APIKey in query string
+  * use grpc code gen compatible with wasm
+  * remove hard coded values (if any)
 * Envoy related
-   * understand why messages are consumed 2 by 2
    * use several envoys
 * Clean code
   * tests / docs
   * integration tests with proxy-wasm tests
   * adopt a more "functional" style for results and options
   * Config as JSON (protobuf Struct)
-* Performance testing
-  * Test no auth vs. auth 
-    * API Key in header
-    * use nighthawk as backend (2 cores)
-    * hey! as frontend (4 cores)
-    * envoy with limited cores (2 cores)
-    * 100rps => 5000rps with jitter
 
