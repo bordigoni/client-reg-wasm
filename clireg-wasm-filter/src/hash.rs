@@ -12,38 +12,32 @@ pub enum HashAlg {
     SHA512,
 }
 
-
-impl HashAlg {
-    fn from(alg: &str) -> HashAlg {
+impl From<&str> for HashAlg {
+    fn from(alg: &str) -> Self {
         match alg {
-            "sha256" | "sha-256" | "SHA256" | "SHA-256" => {
-                HashAlg::SHA256
-            }
-            "sha512" | "sha-512" | "SHA512" | "SHA-512" => {
-                HashAlg::SHA512
-            }
+            "sha256" | "sha-256" | "SHA256" | "SHA-256" => HashAlg::SHA256,
+            "sha512" | "sha-512" | "SHA512" | "SHA-512" => HashAlg::SHA512,
             _ => {
-                panic!("hash alg '{}' is unknown, only sha256 and sha512 are supported", alg)
-            }
-        }
-    }
-
-    pub fn new(self) -> Box<dyn Hasher> {
-        match self {
-            HashAlg::SHA256 => {
-                Box::new(sha::Sha256Hasher {})
-            }
-            HashAlg::SHA512 => {
-                Box::new(sha::Sha512Hasher {})
+                panic!(
+                    "hash alg '{}' is unknown, only sha256 and sha512 are supported",
+                    alg
+                )
             }
         }
     }
 }
-
+impl HashAlg {
+    pub fn new(self) -> Box<dyn Hasher> {
+        match self {
+            HashAlg::SHA256 => Box::new(sha::Sha256Hasher {}),
+            HashAlg::SHA512 => Box::new(sha::Sha512Hasher {}),
+        }
+    }
+}
 
 mod sha {
-    use proxy_wasm::types::Bytes;
     use super::Hasher;
+    use proxy_wasm::types::Bytes;
 
     use sha2::{Digest, Sha256, Sha512};
 
@@ -66,24 +60,17 @@ mod sha {
 
 #[cfg(test)]
 mod tests {
-    use proxy_wasm::types::Bytes;
     use super::HashAlg;
     use hex_literal::hex;
+    use proxy_wasm::types::Bytes;
 
     #[test]
     fn in_registry() {
         for alg in [
-            "sha256",
-            "sha-256",
-            "SHA256",
-            "SHA-256",
-            "sha512",
-            "sha-512",
-            "SHA512",
-            "SHA-512",
+            "sha256", "sha-256", "SHA256", "SHA-256", "sha512", "sha-512", "SHA512", "SHA-512",
         ] {
             // load or panic
-            HashAlg::from(alg);
+            let _ = HashAlg::from(alg);
         }
     }
 
@@ -97,23 +84,34 @@ mod tests {
     fn sha256() {
         let bytes = Vec::from("hello world") as Bytes;
         let result = HashAlg::SHA256.new().hash(bytes);
-        assert_eq!(result[..], hex!("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")[..]);
+        assert_eq!(
+            result[..],
+            hex!("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")[..]
+        );
     }
 
     #[test]
     fn sha256_from() {
         let bytes = Vec::from("hello world") as Bytes;
         let result = HashAlg::from("SHA256").new().hash(bytes);
-        assert_eq!(result[..], hex!("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")[..]);
+        assert_eq!(
+            result[..],
+            hex!("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")[..]
+        );
     }
 
     #[test]
     fn sha512() {
         let bytes = Vec::from("hello world") as Bytes;
         let result = HashAlg::SHA512.new().hash(bytes);
-        assert_eq!(result[..], hex!("
+        assert_eq!(
+            result[..],
+            hex!(
+                "
     309ecc489c12d6eb4cc40f50c902f2b4d0ed77ee511a7c7a9bcd3ca86d4cd86f
     989dd35bc5ff499670da34255b45b0cfd830e81f605dcf7dc5542e93ae9cd76f
-")[..]);
+"
+            )[..]
+        );
     }
 }

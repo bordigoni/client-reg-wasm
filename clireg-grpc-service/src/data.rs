@@ -1,5 +1,5 @@
 use sha2::{Digest, Sha256};
-use uuid::{Builder, Uuid};
+use uuid::Uuid;
 
 use crate::registry::registry_response::Credential;
 use crate::registry::RegistryResponse;
@@ -8,7 +8,7 @@ pub fn load() -> Vec<RegistryResponse> {
     simple_case()
 }
 
-fn many_creds() -> Vec<RegistryResponse> {
+fn _many_creds() -> Vec<RegistryResponse> {
     let mut data = vec![
         Credential {
             kind: String::from("api_key"),
@@ -42,7 +42,7 @@ fn many_creds() -> Vec<RegistryResponse> {
             client_id: user,
             secret: hash(pass),
         });
-    };
+    }
 
     vec![RegistryResponse {
         credentials: data,

@@ -1,12 +1,11 @@
 extern crate core;
 
 use log;
-use std::task::ready;
 
 use proxy_wasm::traits::{Context, HttpContext, RootContext};
-use proxy_wasm::types::{Action, Bytes, LogLevel};
+use proxy_wasm::types::{Action, LogLevel};
 
-use auth::{AuthError, AuthKind};
+use auth::AuthError;
 use conf::{ApiKeyLocation, CredSpec, CredsConfig, ServiceConfig, Type};
 use grpc::GRPC;
 use hash::Hasher;
@@ -50,13 +49,6 @@ pub struct AuthFilter {
     ready: bool,
 }
 
-struct RequestCredentials {
-    kind: AuthKind,
-    api_id: String,
-    client_id: String,
-    secret: Option<Bytes>,
-}
-
 impl Context for AuthFilter {}
 
 impl HttpContext for AuthFilter {
@@ -78,33 +70,8 @@ impl HttpContext for AuthFilter {
         let creds = self.extract_credentials();
 
         if let Some(creds) = creds {
-            // check it according to what it is
-            match creds.kind {
-                AuthKind::ApiKey => {
-                    let res = auth::check_api_key(
-                        self,
-                        &creds.api_id,
-                        &creds.client_id,
-                        self.hasher.as_ref(),
-                    );
-                    self.on_failed_send_forbidden(res)
-                }
-                AuthKind::Basic => {
-                    let res = auth::check_basic_auth(
-                        self,
-                        &creds.api_id,
-                        &creds.client_id,
-                        creds.secret.unwrap(),
-                        self.hasher.as_ref(),
-                    );
-                    self.on_failed_send_forbidden(res)
-                }
-                // any other situation is a fatal error => it should not happen though as unknown kind leads to 401
-                other => {
-                    log::info!("auth type unsupported: {}", other);
-                    self.send_internal_server_error()
-                }
-            }
+            let res = creds.check(self, self.hasher.as_ref());
+            self.on_failed_send_forbidden(res);
         } else {
             // no client_id extracted
             log::debug!("Authentication: no credentials found in request");
@@ -115,7 +82,7 @@ impl HttpContext for AuthFilter {
 }
 
 impl AuthFilter {
-    fn extract_credentials(&self) -> Option<RequestCredentials> {
+    fn extract_credentials(&self) -> Option<Box<dyn auth::Credential>> {
         let api_id = self.config.api_id.clone();
         log::debug!(
             "auth kind for {} is {}. ctx:{}",
@@ -126,14 +93,16 @@ impl AuthFilter {
         match &self.config.spec {
             CredSpec::ApiKey(spec) => match &spec.is_in {
                 ApiKeyLocation::Header => {
-                    return self
-                        .get_http_request_header(spec.name.to_ascii_lowercase().as_str())
-                        .map(|client_id| RequestCredentials {
-                            kind: AuthKind::ApiKey,
-                            api_id: api_id.clone(),
-                            client_id,
-                            secret: None,
-                        });
+                    let opt = self.get_http_request_header(spec.name.to_ascii_lowercase().as_str());
+                    if let Some(client_id) = opt {
+                        return Some(Box::new(auth::ApiKeyCredentials {
+                            client_id: auth::ClientId {
+                                api_id: api_id.clone(),
+                                id: client_id,
+                            },
+                        }));
+                    }
+                    None
                 }
                 ApiKeyLocation::QueryParam => {
                     log::warn!("Api-Key Location 'query_param' not handled yet.");
@@ -152,12 +121,13 @@ impl AuthFilter {
                             let user_pwd_bytes = base64::decode(user_pwd_b64);
                             if let Ok(user_pwd) = String::from_utf8(user_pwd_bytes.unwrap()) {
                                 if let Some((user, pass)) = user_pwd.split_once(':') {
-                                    return Some(RequestCredentials {
-                                        kind: AuthKind::Basic,
-                                        api_id: api_id.clone(),
-                                        client_id: user.to_string(),
-                                        secret: Some(pass.as_bytes().to_vec()),
-                                    });
+                                    return Some(Box::new(auth::BasicAuthCredentials {
+                                        client_id: auth::ClientId {
+                                            id: user.to_string(),
+                                            api_id: api_id.clone(),
+                                        },
+                                        secret: pass.as_bytes().to_vec(),
+                                    }));
                                 }
                             }
                         }
@@ -183,10 +153,6 @@ impl AuthFilter {
 
     fn send_unauthorized(&self) {
         self.send_http_response(401, vec![], None)
-    }
-
-    fn send_internal_server_error(&self) {
-        self.send_http_response(500, vec![], None)
     }
 
     fn on_failed_send_forbidden(&mut self, res: Result<(), AuthError>) {

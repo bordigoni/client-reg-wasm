@@ -3,8 +3,8 @@ use prost::Message;
 use proxy_wasm::traits::Context;
 use proxy_wasm::types::Bytes;
 
-use crate::auth::AuthKind;
-use crate::AuthFilterConfig;
+use super::cache;
+
 use registry::RegistryRequest;
 
 use crate::cache::WritableCache;
@@ -20,7 +20,7 @@ pub trait GRPC {
     fn grpc_connect(&mut self) -> u32;
 }
 
-impl Context for AuthFilterConfig {
+impl Context for super::AuthFilterConfig {
     fn on_grpc_stream_message(&mut self, token_id: u32, message_size: usize) {
         log::debug!(
             "[GRPC] message for token:{}, size:{}",
@@ -45,7 +45,7 @@ impl Context for AuthFilterConfig {
     }
 }
 
-impl GRPC for AuthFilterConfig {
+impl GRPC for super::AuthFilterConfig {
     fn grpc_connect(&mut self) -> u32 {
         let conf = &self.config;
         return match self.open_grpc_stream(&conf.cluster, "registry.Registry", "Sync", vec![]) {
@@ -62,21 +62,25 @@ impl GRPC for AuthFilterConfig {
     }
 }
 
-pub fn handle_receive(cache: &mut dyn WritableCache<String, Bytes>, message: Option<Bytes>) {
+pub fn handle_receive(cache: &mut dyn WritableCache, message: Option<Bytes>) {
     if let Some(bytes) = message {
         let res = RegistryResponse::decode(bytes.as_slice());
         match res {
             Ok(response) => {
                 for cred in &response.removals {
-                    cache.delete(AuthKind::format(&cred.owner, &cred.kind, &cred.client_id))
+                    cache.delete(cache::format_key(&cred.owner, &cred.kind, &cred.client_id))
                 }
                 for cred in &response.credentials {
                     cache.put(
-                        AuthKind::format(&cred.owner, &cred.kind, &cred.client_id),
+                        cache::format_key(&cred.owner, &cred.kind, &cred.client_id),
                         Some(cred.secret.clone()),
                     );
                 }
-                log::info!("Auth cache updated: new/updated: {}, removed: {}", &response.credentials.len(), &response.removals.len())
+                log::info!(
+                    "Auth cache updated: new/updated: {}, removed: {}",
+                    &response.credentials.len(),
+                    &response.removals.len()
+                )
             }
             Err(err) => log::error!("cannot decode gRPC message: {}", err),
         }

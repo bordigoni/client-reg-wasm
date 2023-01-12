@@ -1,12 +1,12 @@
+use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
+use crate::auth;
 use json;
 use json::JsonValue;
-use proxy_wasm::types::Bytes;
 use serde::{Deserialize, Serialize};
 use serde_cbor;
 
-use crate::auth::AuthKind;
 use crate::cache::{ReadableCache, WritableCache};
 
 const DEFAULT_TICK_PERIOD_SEC: u64 = 60;
@@ -45,20 +45,47 @@ impl Default for ServiceConfig {
     }
 }
 
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
+pub enum AuthKind {
+    Unknown,
+    ApiKey,
+    Basic,
+    _JWT,
+}
+
+impl From<&str> for AuthKind {
+    fn from(kind: &str) -> Self {
+        match kind.to_ascii_lowercase().as_str() {
+            auth::API_KEY_KIND => AuthKind::ApiKey,
+            auth::BASIC_KIND => AuthKind::Basic,
+            auth::_JWT_KIND => AuthKind::_JWT,
+            _ => AuthKind::Unknown,
+        }
+    }
+}
+
+impl Default for AuthKind {
+    fn default() -> Self {
+        AuthKind::Unknown
+    }
+}
+
+impl Display for AuthKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AuthKind::Unknown => f.write_str("Unknown"),
+            AuthKind::ApiKey => f.write_str("ApiKey"),
+            AuthKind::Basic => f.write_str("Basic"),
+            AuthKind::_JWT => f.write_str("JWT"),
+        }
+    }
+}
+
 #[derive(Default, Debug, PartialEq, Deserialize, Serialize)]
 pub struct CredsConfig {
     pub api_id: String,
     pub kind: AuthKind,
     pub spec: CredSpec,
-}
-
-impl CredsConfig {
-    pub fn has_values(&self) -> bool {
-        match self.spec {
-            CredSpec::Unknown => false,
-            _ => true,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -214,7 +241,7 @@ fn parse_creds_config(conf: &JsonValue, context_id: u32) -> Result<Type, String>
 }
 
 pub fn pull_filter_config(
-    cache: &dyn ReadableCache<String, Bytes>,
+    cache: &dyn ReadableCache,
     context_id: u32,
 ) -> Result<CredsConfig, String> {
     if let Some(bytes) = cache.get(&to_cache_key(context_id)) {
@@ -231,7 +258,7 @@ pub fn pull_filter_config(
 }
 
 pub fn store_filter_config(
-    cache: &mut dyn WritableCache<String, Bytes>,
+    cache: &mut dyn WritableCache,
     context_id: u32,
     creds: CredsConfig,
 ) -> bool {
@@ -258,10 +285,9 @@ fn to_cache_key(context_id: u32) -> String {
 mod tests {
     use std::time::Duration;
 
-    use crate::auth::AuthKind;
     use crate::conf;
     use crate::conf::Type::{Creds, Service, Unknown};
-    use crate::conf::{ApiKeyLocation, ApiKeySpec, CredSpec, CredsConfig, ServiceConfig};
+    use crate::conf::{ApiKeyLocation, ApiKeySpec, AuthKind, CredSpec, CredsConfig, ServiceConfig};
 
     #[test]
     fn serialization() {

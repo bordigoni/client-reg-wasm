@@ -1,17 +1,23 @@
+use proxy_wasm::types::Bytes;
+
 pub mod hard_coded;
 pub mod shared;
 
-pub trait ReadableCache<K, V>
-where
-    K: Clone,
-    V: Clone,
-{
-    fn get(&self, key: &K) -> Option<V>;
+pub trait ReadableCache {
+    fn get(&self, key: &String) -> Option<Bytes>;
 }
 
-// this is unsafe, but need to revamp
-// the whole cache abstraction and use channel to update values
-pub trait WritableCache<K, V>: Sync + Send {
-    fn put(&mut self, key: K, value: Option<V>);
-    fn delete(&mut self, key: K);
+pub trait WritableCache: Sync + Send {
+    fn put(&mut self, key: String, value: Option<Bytes>);
+    fn delete(&mut self, key: String);
+}
+
+pub(crate) fn format_key(api_id: &String, kind: &str, client_id: &String) -> String {
+    let mut res = String::new();
+    res.push_str(api_id);
+    res.push('.');
+    res.push_str(kind);
+    res.push('.');
+    res.push_str(client_id);
+    res
 }

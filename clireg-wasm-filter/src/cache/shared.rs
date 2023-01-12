@@ -4,13 +4,13 @@ use crate::{AuthFilter, AuthFilterConfig};
 use proxy_wasm::traits::Context;
 use proxy_wasm::types::Bytes;
 
-impl ReadableCache<String, Bytes> for AuthFilter {
+impl ReadableCache for AuthFilter {
     fn get(&self, id: &String) -> Option<Bytes> {
         self.get_shared_data(id).0
     }
 }
 
-impl WritableCache<String, Bytes> for AuthFilterConfig {
+impl WritableCache for AuthFilterConfig {
     fn put(&mut self, key: String, value: Option<Bytes>) {
         if let Some(bytes) = value {
             let res = self.set_shared_data(key.as_str(), Some(&bytes), None);

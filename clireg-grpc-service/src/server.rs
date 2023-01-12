@@ -63,7 +63,11 @@ impl RegistryHandler {
             let mut i = 0;
             loop {
                 let response = responses.get(i).unwrap();
-                println!("sending response with {} creds, {} removals", response.credentials.len(), response.removals.len());
+                println!(
+                    "sending response with {} creds, {} removals",
+                    response.credentials.len(),
+                    response.removals.len()
+                );
                 match tx.send(Ok(response.clone())).await {
                     Ok(_) => {
                         println!("> sent")
