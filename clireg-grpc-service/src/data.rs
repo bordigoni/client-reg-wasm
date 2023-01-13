@@ -71,6 +71,12 @@ fn simple_case() -> Vec<RegistryResponse> {
                     client_id: String::from("admin"),
                     secret: hash(String::from("changeme")),
                 },
+                Credential {
+                    kind: String::from("jwt"),
+                    owner: String::from("filter3"),
+                    client_id: String::from("benoit"),
+                    secret: "benoit".as_bytes().to_vec(),
+                },
             ],
             removals: vec![Credential {
                 kind: String::from("api_key"),
@@ -97,6 +103,12 @@ fn simple_case() -> Vec<RegistryResponse> {
                     kind: String::from("api_key"),
                     owner: String::from("filter1"),
                     client_id: hash_base64(String::from("ABCDEF")),
+                    secret: Vec::new(),
+                },
+                Credential {
+                    kind: String::from("jwt"),
+                    owner: String::from("filter3"),
+                    client_id: String::from("benoit"),
                     secret: Vec::new(),
                 },
             ],

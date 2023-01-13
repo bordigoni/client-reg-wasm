@@ -78,7 +78,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn not_in_registry() {
-        let _ =HashAlg::from("foo");
+        let _ = HashAlg::from("foo");
     }
 
     #[test]

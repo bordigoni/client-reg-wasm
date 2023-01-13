@@ -21,3 +21,17 @@ pub(crate) fn format_key(api_id: &String, kind: &str, client_id: &String) -> Str
     res.push_str(client_id);
     res
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::auth::API_KEY_KIND;
+    use crate::cache::format_key;
+
+    #[test]
+    fn format() {
+        assert_eq!(
+            "foo.api_key.bar",
+            format_key(&"foo".to_string(), API_KEY_KIND, &"bar".to_string())
+        )
+    }
+}

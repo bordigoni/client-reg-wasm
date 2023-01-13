@@ -71,6 +71,7 @@ Proxy any httpbin api calls (e.g /headers)
 `curl -vk --resolve apikey-header.ampgw.axway.com:10000:127.0.0.1 "https://apikey-header.ampgw.axway.com:10000/headers" -H 'X-API-KEY: ABCDEF'`
 `curl -vk -u admin:changeme --basic --resolve basic.ampgw.axway.com:10000:127.0.0.1 "https://basic.ampgw.axway.com:10000/headers"`
 `curl -vk --resolve apikey-query.ampgw.axway.com:10000:127.0.0.1 "https://apikey-query.ampgw.axway.com:10000/headers?X-API-KEY=ABCDEF"`
+`curl -vk --resolve jwt.ampgw.axway.com:10000:127.0.0.1 --oauth2-bearer "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJjbGllbnRfaWQiOiJiZW5vaXQifQ.wrdsdXeH5tPDmM4alg9jiVNOTXSW1YV_SPCUwKdQPC4" "https://jwt.ampgw.axway.com:10000/headers"`
 
 gRPC test server will chage API key and remove basic auth every 10 secs, following call should end up with a 403.
 If you don't specify API Key / user&pass you'll end up with a 401.
@@ -91,16 +92,14 @@ If you don't specify API Key / user&pass you'll end up with a 401.
 ## Next steps
 
 * Features / deps related
-  * JWT handling
   * try to generate protobuf struct in wasm-filter
 
     (cannot work for now at it brings tonic in and wasm build fails with too many code that cannot be compiled with the wasm target)
-  * use grpc code gen compatible with wasm
-  * remove hard coded values (if any)
+  * add hasher as part of protobuf
+  * make `cargo build --target wasm32-wasi --release` work!
 * Envoy related
    * use several envoys
 * Clean code
-  * tests / docs
-  * integration tests with proxy-wasm tests
+  * docs
   * Config as JSON (protobuf Struct)
 
