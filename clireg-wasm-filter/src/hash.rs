@@ -36,10 +36,10 @@ impl HashAlg {
 }
 
 mod sha {
-    use super::Hasher;
     use proxy_wasm::types::Bytes;
-
     use sha2::{Digest, Sha256, Sha512};
+
+    use super::Hasher;
 
     pub struct Sha256Hasher {}
 
@@ -60,9 +60,10 @@ mod sha {
 
 #[cfg(test)]
 mod tests {
-    use super::HashAlg;
     use hex_literal::hex;
     use proxy_wasm::types::Bytes;
+
+    use super::HashAlg;
 
     #[test]
     fn in_registry() {
@@ -77,7 +78,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn not_in_registry() {
-        HashAlg::from("foo");
+        let _ =HashAlg::from("foo");
     }
 
     #[test]

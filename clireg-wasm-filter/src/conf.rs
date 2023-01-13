@@ -1,12 +1,11 @@
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
 
-use crate::auth;
-use json;
 use json::JsonValue;
 use serde::{Deserialize, Serialize};
-use serde_cbor;
+use {json, serde_cbor};
 
+use super::auth;
 use crate::cache::{ReadableCache, WritableCache};
 
 const DEFAULT_TICK_PERIOD_SEC: u64 = 60;

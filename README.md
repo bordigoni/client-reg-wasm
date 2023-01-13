@@ -68,12 +68,12 @@ You can find the documented protobuf in `proto/`
 
 Proxy any httpbin api calls (e.g /headers)
 
-`curl -v  http://localhost:10000/headers -H 'X-API-KEY: ABCDEF' -H 'Authorization: Basic YWRtaW46Y2hhbmdlbWU='`
+`curl -vk --resolve apikey-header.ampgw.axway.com:10000:127.0.0.1 "https://apikey-header.ampgw.axway.com:10000/headers" -H 'X-API-KEY: ABCDEF'`
+`curl -vk -u admin:changeme --basic --resolve basic.ampgw.axway.com:10000:127.0.0.1 "https://basic.ampgw.axway.com:10000/headers"`
+`curl -vk --resolve apikey-query.ampgw.axway.com:10000:127.0.0.1 "https://apikey-query.ampgw.axway.com:10000/headers?X-API-KEY=ABCDEF"`
 
-gRPC test server will chage API key and remove basic auth every 10 secs, following call should end up with a 401.
-If you don't specify API Key header you'll end up with a 401.
-
-**Yes I know two authentication for one API is dumb but, it was the simplest way to test several instances of the filter.**
+gRPC test server will chage API key and remove basic auth every 10 secs, following call should end up with a 403.
+If you don't specify API Key / user&pass you'll end up with a 401.
 
 ## Run perf test
 * gRPC service: see above (use of data.rs/many_creds() function so that no credentials removal occurs and on 403 can happen, and get up to a 1 000 000 creds.
@@ -95,7 +95,6 @@ If you don't specify API Key header you'll end up with a 401.
   * try to generate protobuf struct in wasm-filter
 
     (cannot work for now at it brings tonic in and wasm build fails with too many code that cannot be compiled with the wasm target)
-  * allow APIKey in query string
   * use grpc code gen compatible with wasm
   * remove hard coded values (if any)
 * Envoy related
@@ -103,6 +102,5 @@ If you don't specify API Key header you'll end up with a 401.
 * Clean code
   * tests / docs
   * integration tests with proxy-wasm tests
-  * adopt a more "functional" style for results and options
   * Config as JSON (protobuf Struct)
 

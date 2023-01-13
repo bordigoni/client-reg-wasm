@@ -1,14 +1,12 @@
 extern crate core;
 
-use log;
-
-use proxy_wasm::traits::{Context, HttpContext, RootContext};
-use proxy_wasm::types::{Action, LogLevel};
-
-use auth::AuthError;
+use auth::{AuthError, Credential};
 use conf::{ApiKeyLocation, CredSpec, CredsConfig, ServiceConfig, Type};
 use grpc::GRPC;
 use hash::Hasher;
+use log;
+use proxy_wasm::traits::{Context, HttpContext, RootContext};
+use proxy_wasm::types::{Action, LogLevel};
 
 mod auth;
 mod cache;
@@ -82,7 +80,7 @@ impl HttpContext for AuthFilter {
 }
 
 impl AuthFilter {
-    fn extract_credentials(&self) -> Option<Box<dyn auth::Credential>> {
+    fn extract_credentials(&self) -> Option<Box<dyn Credential>> {
         let api_id = self.config.api_id.clone();
         log::debug!(
             "auth kind for {} is {}. ctx:{}",
@@ -93,20 +91,16 @@ impl AuthFilter {
         match &self.config.spec {
             CredSpec::ApiKey(spec) => match &spec.is_in {
                 ApiKeyLocation::Header => {
-                    let opt = self.get_http_request_header(spec.name.to_ascii_lowercase().as_str());
-                    if let Some(client_id) = opt {
-                        return Some(Box::new(auth::ApiKeyCredentials {
-                            client_id: auth::ClientId {
-                                api_id: api_id.clone(),
-                                id: client_id,
-                            },
-                        }));
-                    }
-                    None
+                    let header =
+                        self.get_http_request_header(spec.name.to_ascii_lowercase().as_str());
+                    Self::api_key_creds(&api_id, header)
                 }
                 ApiKeyLocation::QueryParam => {
-                    log::warn!("Api-Key Location 'query_param' not handled yet.");
-                    None
+                    let request_path = self.get_http_request_header(":path");
+                    Self::api_key_creds(
+                        &api_id,
+                        Self::extract_from_query_string(request_path, spec.name.as_str()),
+                    )
                 }
                 ApiKeyLocation::Unknown(location) => {
                     log::warn!("Api-Key Location unknown: {}", location);
@@ -116,27 +110,15 @@ impl AuthFilter {
             CredSpec::Basic => {
                 // ugly as hell won't keep it so...
                 if let Some(auth_header) = self.get_http_request_header("Authorization") {
-                    if let Some((basic, user_pwd_b64)) = auth_header.split_once(' ') {
-                        if basic.eq_ignore_ascii_case("basic") {
-                            let user_pwd_bytes = base64::decode(user_pwd_b64);
-                            if let Ok(user_pwd) = String::from_utf8(user_pwd_bytes.unwrap()) {
-                                if let Some((user, pass)) = user_pwd.split_once(':') {
-                                    return Some(Box::new(auth::BasicAuthCredentials {
-                                        client_id: auth::ClientId {
-                                            id: user.to_string(),
-                                            api_id: api_id.clone(),
-                                        },
-                                        secret: pass.as_bytes().to_vec(),
-                                    }));
-                                }
-                            }
-                        }
+                    if let Ok(creds) = http_auth_basic::Credentials::from_header(auth_header) {
+                        return Some(Box::new(auth::BasicAuthCredentials {
+                            client_id: auth::ClientId {
+                                id: creds.user_id,
+                                api_id,
+                            },
+                            secret: creds.password.into_bytes(),
+                        }));
                     }
-                    log::debug!(
-                        "basic auth for api_id:{} could not properly parse user and password",
-                        &api_id
-                    );
-                    return None;
                 }
                 log::debug!("no authorization header found kind for api_id:{}", &api_id);
                 None
@@ -148,6 +130,34 @@ impl AuthFilter {
                 );
                 None
             }
+        }
+    }
+
+    fn api_key_creds(api_id: &String, param: Option<String>) -> Option<Box<dyn Credential>> {
+        if let Some(api_key) = param {
+            return Some(Box::new(auth::ApiKeyCredentials {
+                client_id: auth::ClientId {
+                    api_id: api_id.clone(),
+                    id: api_key,
+                },
+            }));
+        }
+        None
+    }
+
+    fn extract_from_query_string(request_path: Option<String>, name: &str) -> Option<String> {
+        if let Some(path) = request_path {
+            if let Some((_, query_string)) = path.split_once('?') {
+                querystring::querify(query_string)
+                    .iter()
+                    .filter(|(key, _)| key.eq_ignore_ascii_case(name))
+                    .next()
+                    .map(|(_, value)| value.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
         }
     }
 
@@ -228,6 +238,33 @@ impl RootContext for AuthFilterConfig {
             self.grpc_token = self.grpc_connect()
         } else {
             grpc::renew_request(self, self.grpc_token)
+        }
+    }
+}
+
+#[cfg(test)]
+mod lib {
+    use crate::AuthFilter;
+
+    #[test]
+    fn extract_from_query_string() {
+        for (path, name, key, eq) in vec![
+            ("/headers?x-api-key=123", "x-api-key", "123", true),
+            ("/headers?x-api-key=123", "X-API-KEY", "123", true),
+            ("/headers?X-API-KEY=123", "x-api-key", "123", true),
+            ("/headers?foo=bar&X-API-KEY=123", "x-api-key", "123", true),
+            ("/headers?X-API-KEY=123&foo=bar&", "x-api-key", "123", true),
+            ("/headers", "x-api-key", "123", false),
+            ("/headers?", "x-api-key", "123", false),
+            ("/headers?foo=bar", "x-api-key", "123", false),
+        ] {
+            let api_key = AuthFilter::extract_from_query_string(Some(path.to_string()), name)
+                .unwrap_or("<unknown api key>".to_string());
+            if eq {
+                assert_eq!(key, api_key.as_str())
+            } else {
+                assert_eq!("<unknown api key>", api_key.as_str())
+            }
         }
     }
 }

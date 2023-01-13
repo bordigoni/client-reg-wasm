@@ -28,79 +28,376 @@ static_resources:
       socket_address:
         address: 0.0.0.0
         port_value: 10000
+    listenerFilters:
+      - name: envoy.filters.listener.tls_inspector
+        typedConfig:
+          "@type": type.googleapis.com/envoy.extensions.filters.listener.tls_inspector.v3.TlsInspector
     filter_chains:
-      - name: rabbit
+      - name: apikey-header
         filters:
-        - name: envoy.filters.network.http_connection_manager
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              strip_matching_host_port: true
+              use_remote_address: true
+              stat_prefix: apikey_ingress
+              route_config:
+                name: local_routes
+                virtual_hosts:
+                  - name: local_service
+                    domains:
+                      - "apikey-header.ampgw.axway.com"
+                    routes:
+                      - match:
+                          prefix: "/"
+                        route:
+                          cluster: httpbin
+              http_filters:
+                - name: envoy.filters.http.wasm.auth
+                  typed_config:
+                    "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                    type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                    value:
+                      config:
+                        name: "http_auth"
+                        root_id: http_bin_auth
+                        configuration:
+                          "@type": "type.googleapis.com/google.protobuf.StringValue"
+                          value: |
+                            {
+                              "config": "creds",
+                              "creds": {
+                                "kind": "api_key",
+                                "api_id": "filter1",
+                                "in": "header",
+                                "name": "x-api-key"
+                              }
+                            }
+                        vm_config:
+                          vm_id: "auth_vm"
+                          runtime: "envoy.wasm.runtime.v8"
+                          code:
+                            local:
+                              filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
+                - name: envoy.filters.http.router
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        filter_chain_match:
+          server_names:
+            - "apikey-header.ampgw.axway.com"
+        transport_socket:
+          name: envoy.transport_socket.tls
           typed_config:
-            "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-            stat_prefix: ingress_http
-            codec_type: AUTO
-            route_config:
-              name: local_routes
-              virtual_hosts:
-                - name: local_service
-                  domains:
-                    - "*"
-                  routes:
-                    - match:
-                        prefix: "/"
-                      route:
-                        cluster: httpbin
-            http_filters:
-              - name: envoy.filters.http.wasm.0
-                typed_config:
-                  "@type": type.googleapis.com/udpa.type.v1.TypedStruct
-                  type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
-                  value:
-                    config:
-                      name: "http_auth"
-                      root_id: http_bin_auth
-                      configuration:
-                        "@type": "type.googleapis.com/google.protobuf.StringValue"
-                        value: |
-                          {
-                            "config": "creds",
-                            "creds": {
-                              "kind": "api_key",
-                              "api_id": "filter1",
-                              "in": "header",
-                              "name": "x-api-key"
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+            common_tls_context:
+              tls_params:
+                ecdh_curves:
+                  - secp384r1
+                cipher_suites:
+                  - ECDHE-ECDSA-AES256-GCM-SHA384
+                  - ECDHE-ECDSA-CHACHA20-POLY1305
+                  - ECDHE-RSA-AES256-GCM-SHA384
+                  - ECDHE-RSA-CHACHA20-POLY1305
+                tls_maximum_protocol_version: TLSv1_3
+                tls_minimum_protocol_version: TLSv1_2
+              alpn_protocols:
+                - h2
+                - http/1.1
+              tls_certificates:
+                private_key:
+                  inline_string: |
+                    -----BEGIN PRIVATE KEY-----
+                    MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCACEGm5LIJ8ecO
+                    4IDNS1suL/6WJE+8rU8DOQmqwOfZvKS5lPyN2gZ5khe0r0qB7IW7d1dbJky9Q+bb
+                    QSHCpbIt2iOa20Yo0I4P+kw8zzJPujr421WVvkPe4kqawMse1izYLByMRFERJiBx
+                    NuSEWnhghKsVt4u2JYy4zyzPhym6/MHO500yffj0jowS0JYbPJ9MFAXkQXfpgLN8
+                    zocKdIZhzzS7UOWPqA8vLdvQBG9qmIdc1WsjZM67gDqsROkvlc954ax1Qmr8EddV
+                    w9d73fDFTVLwnuF3Ns29mpdDOnRjQDXScmPCWpj5X9JT4CCwjUQbMofSIQOdUgIA
+                    XRhuB0JVAgMBAAECggEACKcGMM4xzgRAFjxL2BPopJVvwhvQG7MmrNQU+CozQP7D
+                    rxsHelqqp1qdKYPTKDagzwuAptNOylelaVncezgRc5HTaCq7chSuFRxYPJ/QCZ1P
+                    UPQZs5X5Jj3qxsySrZHR1AYfI8eWJu+Jr70C8oLesb8lhMEzuuqMuQyfPaMnydAk
+                    PuqAlhGsrNM0gomposUfpuY61DJw5Hjmm81kCbMlciPM7zy3TR6SGmL0qQ8BkKT4
+                    pgY9D4gtBFJkFh1VH+10ZEV7xMdspasPhGh3Fb2sYMydczKg3+VztNrV+zdrU1jY
+                    MfBb3AQsjBhVvuJb8Qtcrnmh0P/6Z3979LTc9jeVIQKBgQDXKtLcM+50hznkddfm
+                    jRVJUxU7B2ho7Kd20OC8irI3FF6OG+LSfm1/gU3L8nFBD/UaqO+PKMS0WLV3ofJx
+                    oyuAmfSZJLQFgDkA+zlpgR+Mg1ffuhW5TrnublyOgBziiOT1CJFCmKUYtPzNS2U0
+                    lUYJ0jEjPtHoX8gu9ougk/C53QKBgQCYVEV8O4aD4MQTT5+4X7IXX3uock4obNIf
+                    cQejIaYJZ5wOFYmOe0z8ouPCLispSav2U6p+LnWHqJeG1yTn9MUnENUzjWjNHYhs
+                    9KOLY2CS7vUH8gmHRJ4wRVO4EbOW5SfHa1fObZ+BD5BJdOiUoWqeHd4s4G1e5c2Z
+                    OfoQRKQu2QKBgHyWs1oGSAD5fDApfEZnUvgOP7DabT60KZPHBxqlRORXyxiGVSSF
+                    SGoYOS/qxmFiGA7D21MNzDiRVSJch8H9NWdVvige9I5q3JcQ4QGSXu5B71QAsCuI
+                    xmilRrrMu+0AT3MC7vmc4ZwY0HkfOw7jkJaHOySpb2oabBOldtwYTb+RAoGAdoy/
+                    NxwsZ945Or4xE5CGTWJmHoY3BYcLUKTqyK6bRZ54+Q0R7O1Q0R0EHE9KD+viBObA
+                    PUty9IzkwHAXrN31wZ18D47yDQ/66LDLxuMkebW2xOQ9PiTM58xMh2hfWAQnnS+R
+                    OnpeNFckd8aga2vkSgH8svhGpiA6jhFs59RD4qECgYB5zdpj+W1fxhTbgpYoKtjC
+                    2faw3F5913BbazfaMPtON49KNgnr1gd0is+JXOHKH3Am1MhPBSovL5tDlJT10nln
+                    IrzmPYGnUufnZo+m0aEHnmTFD17phDOp+rHfDiNZ/HUrNIGqIljb4791xgT4Mer7
+                    IhILoELZvEfEQJK+qgKiMQ==
+                    -----END PRIVATE KEY-----
+                certificate_chain:
+                  inline_string: |
+                    -----BEGIN CERTIFICATE-----
+                    MIIDBDCCAeygAwIBAgIEbIEO/TANBgkqhkiG9w0BAQsFADAsMQ4wDAYDVQQLEwVh
+                    eHdheTEaMBgGA1UEAwwRKi5hbXBndy5heHdheS5jb20wHhcNMjExMDIwMDkzNTI3
+                    WhcNMzExMDE4MDkzNTI3WjAsMQ4wDAYDVQQLEwVheHdheTEaMBgGA1UEAwwRKi5h
+                    bXBndy5heHdheS5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCA
+                    CEGm5LIJ8ecO4IDNS1suL/6WJE+8rU8DOQmqwOfZvKS5lPyN2gZ5khe0r0qB7IW7
+                    d1dbJky9Q+bbQSHCpbIt2iOa20Yo0I4P+kw8zzJPujr421WVvkPe4kqawMse1izY
+                    LByMRFERJiBxNuSEWnhghKsVt4u2JYy4zyzPhym6/MHO500yffj0jowS0JYbPJ9M
+                    FAXkQXfpgLN8zocKdIZhzzS7UOWPqA8vLdvQBG9qmIdc1WsjZM67gDqsROkvlc95
+                    4ax1Qmr8EddVw9d73fDFTVLwnuF3Ns29mpdDOnRjQDXScmPCWpj5X9JT4CCwjUQb
+                    MofSIQOdUgIAXRhuB0JVAgMBAAGjLjAsMAsGA1UdDwQEAwIC/DAdBgNVHQ4EFgQU
+                    IWCfgyndCF4OW35ypMtHMy1R5uMwDQYJKoZIhvcNAQELBQADggEBAHlz7YzsaGz/
+                    g/onxwG9E2AU1SiSmED5xO5I9no+4pt1bT88Tp9FybjOQXFuuZP+NEwvtuiI3e6I
+                    geK5YAuGtL7QJqgqJcdzVa0Dy25Q2ESaReDUBqBTwqSVVGnkRUowX+q0c6ZN5mIY
+                    jh/wryD36UdLg2op2HwVwAS2Ej42lB9Req9KPca4d/NQc9GjivEaA/wJ+10DLt0R
+                    n4WQ62ABWOsrM1RKnwikBsHstDKbenT+uZVIXY1FWtiKumbpo7/luOdotPDsfLJ7
+                    DHg+Xqb+8hpbCMWAZFxjSAHs40prRbwZDmG0+Rqr0JorVPz8h3XK2Bf07V+OGRxk
+                    1JMYXad+Emk=
+                    -----END CERTIFICATE-----
+      - name: apikey-query
+        filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              strip_matching_host_port: true
+              use_remote_address: true
+              stat_prefix: apikey_ingress
+              route_config:
+                name: local_routes
+                virtual_hosts:
+                  - name: local_service
+                    domains:
+                      - "apikey-query.ampgw.axway.com"
+                    routes:
+                      - match:
+                          prefix: "/"
+                        route:
+                          cluster: httpbin
+              http_filters:
+                - name: envoy.filters.http.wasm.auth
+                  typed_config:
+                    "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                    type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                    value:
+                      config:
+                        name: "http_auth"
+                        root_id: http_bin_auth
+                        configuration:
+                          "@type": "type.googleapis.com/google.protobuf.StringValue"
+                          value: |
+                            {
+                              "config": "creds",
+                              "creds": {
+                                "kind": "api_key",
+                                "api_id": "filter1",
+                                "in": "query_param",
+                                "name": "x-api-key"
+                              }
                             }
-                          }
-                      vm_config:
-                        vm_id: "auth_vm"
-                        runtime: "envoy.wasm.runtime.v8"
-                        code:
-                          local:
-                            filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
-              - name: envoy.filters.http.wasm.1
-                typed_config:
-                  "@type": type.googleapis.com/udpa.type.v1.TypedStruct
-                  type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
-                  value:
-                    config:
-                      name: "http_auth"
-                      root_id: http_bin_auth
-                      configuration:
-                        "@type": "type.googleapis.com/google.protobuf.StringValue"
-                        value: |
-                          {
-                            "config": "creds",
-                            "creds": {
-                              "kind": "basic",
-                              "api_id": "filter2"
+                        vm_config:
+                          vm_id: "auth_vm"
+                          runtime: "envoy.wasm.runtime.v8"
+                          code:
+                            local:
+                              filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
+                - name: envoy.filters.http.router
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        filter_chain_match:
+          server_names:
+            - "apikey-query.ampgw.axway.com"
+        transport_socket:
+          name: envoy.transport_socket.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+            common_tls_context:
+              tls_params:
+                ecdh_curves:
+                  - secp384r1
+                cipher_suites:
+                  - ECDHE-ECDSA-AES256-GCM-SHA384
+                  - ECDHE-ECDSA-CHACHA20-POLY1305
+                  - ECDHE-RSA-AES256-GCM-SHA384
+                  - ECDHE-RSA-CHACHA20-POLY1305
+                tls_maximum_protocol_version: TLSv1_3
+                tls_minimum_protocol_version: TLSv1_2
+              alpn_protocols:
+                - h2
+                - http/1.1
+              tls_certificates:
+                private_key:
+                  inline_string: |
+                    -----BEGIN PRIVATE KEY-----
+                    MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCACEGm5LIJ8ecO
+                    4IDNS1suL/6WJE+8rU8DOQmqwOfZvKS5lPyN2gZ5khe0r0qB7IW7d1dbJky9Q+bb
+                    QSHCpbIt2iOa20Yo0I4P+kw8zzJPujr421WVvkPe4kqawMse1izYLByMRFERJiBx
+                    NuSEWnhghKsVt4u2JYy4zyzPhym6/MHO500yffj0jowS0JYbPJ9MFAXkQXfpgLN8
+                    zocKdIZhzzS7UOWPqA8vLdvQBG9qmIdc1WsjZM67gDqsROkvlc954ax1Qmr8EddV
+                    w9d73fDFTVLwnuF3Ns29mpdDOnRjQDXScmPCWpj5X9JT4CCwjUQbMofSIQOdUgIA
+                    XRhuB0JVAgMBAAECggEACKcGMM4xzgRAFjxL2BPopJVvwhvQG7MmrNQU+CozQP7D
+                    rxsHelqqp1qdKYPTKDagzwuAptNOylelaVncezgRc5HTaCq7chSuFRxYPJ/QCZ1P
+                    UPQZs5X5Jj3qxsySrZHR1AYfI8eWJu+Jr70C8oLesb8lhMEzuuqMuQyfPaMnydAk
+                    PuqAlhGsrNM0gomposUfpuY61DJw5Hjmm81kCbMlciPM7zy3TR6SGmL0qQ8BkKT4
+                    pgY9D4gtBFJkFh1VH+10ZEV7xMdspasPhGh3Fb2sYMydczKg3+VztNrV+zdrU1jY
+                    MfBb3AQsjBhVvuJb8Qtcrnmh0P/6Z3979LTc9jeVIQKBgQDXKtLcM+50hznkddfm
+                    jRVJUxU7B2ho7Kd20OC8irI3FF6OG+LSfm1/gU3L8nFBD/UaqO+PKMS0WLV3ofJx
+                    oyuAmfSZJLQFgDkA+zlpgR+Mg1ffuhW5TrnublyOgBziiOT1CJFCmKUYtPzNS2U0
+                    lUYJ0jEjPtHoX8gu9ougk/C53QKBgQCYVEV8O4aD4MQTT5+4X7IXX3uock4obNIf
+                    cQejIaYJZ5wOFYmOe0z8ouPCLispSav2U6p+LnWHqJeG1yTn9MUnENUzjWjNHYhs
+                    9KOLY2CS7vUH8gmHRJ4wRVO4EbOW5SfHa1fObZ+BD5BJdOiUoWqeHd4s4G1e5c2Z
+                    OfoQRKQu2QKBgHyWs1oGSAD5fDApfEZnUvgOP7DabT60KZPHBxqlRORXyxiGVSSF
+                    SGoYOS/qxmFiGA7D21MNzDiRVSJch8H9NWdVvige9I5q3JcQ4QGSXu5B71QAsCuI
+                    xmilRrrMu+0AT3MC7vmc4ZwY0HkfOw7jkJaHOySpb2oabBOldtwYTb+RAoGAdoy/
+                    NxwsZ945Or4xE5CGTWJmHoY3BYcLUKTqyK6bRZ54+Q0R7O1Q0R0EHE9KD+viBObA
+                    PUty9IzkwHAXrN31wZ18D47yDQ/66LDLxuMkebW2xOQ9PiTM58xMh2hfWAQnnS+R
+                    OnpeNFckd8aga2vkSgH8svhGpiA6jhFs59RD4qECgYB5zdpj+W1fxhTbgpYoKtjC
+                    2faw3F5913BbazfaMPtON49KNgnr1gd0is+JXOHKH3Am1MhPBSovL5tDlJT10nln
+                    IrzmPYGnUufnZo+m0aEHnmTFD17phDOp+rHfDiNZ/HUrNIGqIljb4791xgT4Mer7
+                    IhILoELZvEfEQJK+qgKiMQ==
+                    -----END PRIVATE KEY-----
+                certificate_chain:
+                  inline_string: |
+                    -----BEGIN CERTIFICATE-----
+                    MIIDBDCCAeygAwIBAgIEbIEO/TANBgkqhkiG9w0BAQsFADAsMQ4wDAYDVQQLEwVh
+                    eHdheTEaMBgGA1UEAwwRKi5hbXBndy5heHdheS5jb20wHhcNMjExMDIwMDkzNTI3
+                    WhcNMzExMDE4MDkzNTI3WjAsMQ4wDAYDVQQLEwVheHdheTEaMBgGA1UEAwwRKi5h
+                    bXBndy5heHdheS5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCA
+                    CEGm5LIJ8ecO4IDNS1suL/6WJE+8rU8DOQmqwOfZvKS5lPyN2gZ5khe0r0qB7IW7
+                    d1dbJky9Q+bbQSHCpbIt2iOa20Yo0I4P+kw8zzJPujr421WVvkPe4kqawMse1izY
+                    LByMRFERJiBxNuSEWnhghKsVt4u2JYy4zyzPhym6/MHO500yffj0jowS0JYbPJ9M
+                    FAXkQXfpgLN8zocKdIZhzzS7UOWPqA8vLdvQBG9qmIdc1WsjZM67gDqsROkvlc95
+                    4ax1Qmr8EddVw9d73fDFTVLwnuF3Ns29mpdDOnRjQDXScmPCWpj5X9JT4CCwjUQb
+                    MofSIQOdUgIAXRhuB0JVAgMBAAGjLjAsMAsGA1UdDwQEAwIC/DAdBgNVHQ4EFgQU
+                    IWCfgyndCF4OW35ypMtHMy1R5uMwDQYJKoZIhvcNAQELBQADggEBAHlz7YzsaGz/
+                    g/onxwG9E2AU1SiSmED5xO5I9no+4pt1bT88Tp9FybjOQXFuuZP+NEwvtuiI3e6I
+                    geK5YAuGtL7QJqgqJcdzVa0Dy25Q2ESaReDUBqBTwqSVVGnkRUowX+q0c6ZN5mIY
+                    jh/wryD36UdLg2op2HwVwAS2Ej42lB9Req9KPca4d/NQc9GjivEaA/wJ+10DLt0R
+                    n4WQ62ABWOsrM1RKnwikBsHstDKbenT+uZVIXY1FWtiKumbpo7/luOdotPDsfLJ7
+                    DHg+Xqb+8hpbCMWAZFxjSAHs40prRbwZDmG0+Rqr0JorVPz8h3XK2Bf07V+OGRxk
+                    1JMYXad+Emk=
+                    -----END CERTIFICATE-----
+
+      - name: basic
+        filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: basic_ingress
+              strip_matching_host_port: true
+              use_remote_address: true
+              route_config:
+                name: local_routes
+                virtual_hosts:
+                  - name: local_service
+                    domains:
+                      - "basic.ampgw.axway.com"
+                    routes:
+                      - match:
+                          prefix: "/"
+                        route:
+                          cluster: httpbin
+              http_filters:
+                - name: envoy.filters.http.wasm.auth
+                  typed_config:
+                    "@type": type.googleapis.com/udpa.type.v1.TypedStruct
+                    type_url: type.googleapis.com/envoy.extensions.filters.http.wasm.v3.Wasm
+                    value:
+                      config:
+                        name: "http_auth"
+                        root_id: http_bin_auth
+                        configuration:
+                          "@type": "type.googleapis.com/google.protobuf.StringValue"
+                          value: |
+                            {
+                              "config": "creds",
+                              "creds": {
+                                "kind": "basic",
+                                "api_id": "filter2"
+                              }
                             }
-                          }
-                      vm_config:
-                        vm_id: "auth_vm"
-                        runtime: "envoy.wasm.runtime.v8"
-                        code:
-                          local:
-                            filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
-              - name: envoy.filters.http.router
-                typed_config:
-                  "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                        vm_config:
+                          vm_id: "auth_vm"
+                          runtime: "envoy.wasm.runtime.v8"
+                          code:
+                            local:
+                              filename: "/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm"
+                - name: envoy.filters.http.router
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+        filter_chain_match:
+          server_names:
+            - "basic.ampgw.axway.com"
+        transport_socket:
+          name: envoy.transport_socket.tls
+          typed_config:
+            "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+            common_tls_context:
+              tls_params:
+                ecdh_curves:
+                  - secp384r1
+                cipher_suites:
+                  - ECDHE-ECDSA-AES256-GCM-SHA384
+                  - ECDHE-ECDSA-CHACHA20-POLY1305
+                  - ECDHE-RSA-AES256-GCM-SHA384
+                  - ECDHE-RSA-CHACHA20-POLY1305
+                tls_maximum_protocol_version: TLSv1_3
+                tls_minimum_protocol_version: TLSv1_2
+              alpn_protocols:
+                - h2
+                - http/1.1
+              tls_certificates:
+                private_key:
+                  inline_string: |
+                    -----BEGIN PRIVATE KEY-----
+                    MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCACEGm5LIJ8ecO
+                    4IDNS1suL/6WJE+8rU8DOQmqwOfZvKS5lPyN2gZ5khe0r0qB7IW7d1dbJky9Q+bb
+                    QSHCpbIt2iOa20Yo0I4P+kw8zzJPujr421WVvkPe4kqawMse1izYLByMRFERJiBx
+                    NuSEWnhghKsVt4u2JYy4zyzPhym6/MHO500yffj0jowS0JYbPJ9MFAXkQXfpgLN8
+                    zocKdIZhzzS7UOWPqA8vLdvQBG9qmIdc1WsjZM67gDqsROkvlc954ax1Qmr8EddV
+                    w9d73fDFTVLwnuF3Ns29mpdDOnRjQDXScmPCWpj5X9JT4CCwjUQbMofSIQOdUgIA
+                    XRhuB0JVAgMBAAECggEACKcGMM4xzgRAFjxL2BPopJVvwhvQG7MmrNQU+CozQP7D
+                    rxsHelqqp1qdKYPTKDagzwuAptNOylelaVncezgRc5HTaCq7chSuFRxYPJ/QCZ1P
+                    UPQZs5X5Jj3qxsySrZHR1AYfI8eWJu+Jr70C8oLesb8lhMEzuuqMuQyfPaMnydAk
+                    PuqAlhGsrNM0gomposUfpuY61DJw5Hjmm81kCbMlciPM7zy3TR6SGmL0qQ8BkKT4
+                    pgY9D4gtBFJkFh1VH+10ZEV7xMdspasPhGh3Fb2sYMydczKg3+VztNrV+zdrU1jY
+                    MfBb3AQsjBhVvuJb8Qtcrnmh0P/6Z3979LTc9jeVIQKBgQDXKtLcM+50hznkddfm
+                    jRVJUxU7B2ho7Kd20OC8irI3FF6OG+LSfm1/gU3L8nFBD/UaqO+PKMS0WLV3ofJx
+                    oyuAmfSZJLQFgDkA+zlpgR+Mg1ffuhW5TrnublyOgBziiOT1CJFCmKUYtPzNS2U0
+                    lUYJ0jEjPtHoX8gu9ougk/C53QKBgQCYVEV8O4aD4MQTT5+4X7IXX3uock4obNIf
+                    cQejIaYJZ5wOFYmOe0z8ouPCLispSav2U6p+LnWHqJeG1yTn9MUnENUzjWjNHYhs
+                    9KOLY2CS7vUH8gmHRJ4wRVO4EbOW5SfHa1fObZ+BD5BJdOiUoWqeHd4s4G1e5c2Z
+                    OfoQRKQu2QKBgHyWs1oGSAD5fDApfEZnUvgOP7DabT60KZPHBxqlRORXyxiGVSSF
+                    SGoYOS/qxmFiGA7D21MNzDiRVSJch8H9NWdVvige9I5q3JcQ4QGSXu5B71QAsCuI
+                    xmilRrrMu+0AT3MC7vmc4ZwY0HkfOw7jkJaHOySpb2oabBOldtwYTb+RAoGAdoy/
+                    NxwsZ945Or4xE5CGTWJmHoY3BYcLUKTqyK6bRZ54+Q0R7O1Q0R0EHE9KD+viBObA
+                    PUty9IzkwHAXrN31wZ18D47yDQ/66LDLxuMkebW2xOQ9PiTM58xMh2hfWAQnnS+R
+                    OnpeNFckd8aga2vkSgH8svhGpiA6jhFs59RD4qECgYB5zdpj+W1fxhTbgpYoKtjC
+                    2faw3F5913BbazfaMPtON49KNgnr1gd0is+JXOHKH3Am1MhPBSovL5tDlJT10nln
+                    IrzmPYGnUufnZo+m0aEHnmTFD17phDOp+rHfDiNZ/HUrNIGqIljb4791xgT4Mer7
+                    IhILoELZvEfEQJK+qgKiMQ==
+                    -----END PRIVATE KEY-----
+                certificate_chain:
+                  inline_string: |
+                    -----BEGIN CERTIFICATE-----
+                    MIIDBDCCAeygAwIBAgIEbIEO/TANBgkqhkiG9w0BAQsFADAsMQ4wDAYDVQQLEwVh
+                    eHdheTEaMBgGA1UEAwwRKi5hbXBndy5heHdheS5jb20wHhcNMjExMDIwMDkzNTI3
+                    WhcNMzExMDE4MDkzNTI3WjAsMQ4wDAYDVQQLEwVheHdheTEaMBgGA1UEAwwRKi5h
+                    bXBndy5heHdheS5jb20wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCA
+                    CEGm5LIJ8ecO4IDNS1suL/6WJE+8rU8DOQmqwOfZvKS5lPyN2gZ5khe0r0qB7IW7
+                    d1dbJky9Q+bbQSHCpbIt2iOa20Yo0I4P+kw8zzJPujr421WVvkPe4kqawMse1izY
+                    LByMRFERJiBxNuSEWnhghKsVt4u2JYy4zyzPhym6/MHO500yffj0jowS0JYbPJ9M
+                    FAXkQXfpgLN8zocKdIZhzzS7UOWPqA8vLdvQBG9qmIdc1WsjZM67gDqsROkvlc95
+                    4ax1Qmr8EddVw9d73fDFTVLwnuF3Ns29mpdDOnRjQDXScmPCWpj5X9JT4CCwjUQb
+                    MofSIQOdUgIAXRhuB0JVAgMBAAGjLjAsMAsGA1UdDwQEAwIC/DAdBgNVHQ4EFgQU
+                    IWCfgyndCF4OW35ypMtHMy1R5uMwDQYJKoZIhvcNAQELBQADggEBAHlz7YzsaGz/
+                    g/onxwG9E2AU1SiSmED5xO5I9no+4pt1bT88Tp9FybjOQXFuuZP+NEwvtuiI3e6I
+                    geK5YAuGtL7QJqgqJcdzVa0Dy25Q2ESaReDUBqBTwqSVVGnkRUowX+q0c6ZN5mIY
+                    jh/wryD36UdLg2op2HwVwAS2Ej42lB9Req9KPca4d/NQc9GjivEaA/wJ+10DLt0R
+                    n4WQ62ABWOsrM1RKnwikBsHstDKbenT+uZVIXY1FWtiKumbpo7/luOdotPDsfLJ7
+                    DHg+Xqb+8hpbCMWAZFxjSAHs40prRbwZDmG0+Rqr0JorVPz8h3XK2Bf07V+OGRxk
+                    1JMYXad+Emk=
+                    -----END CERTIFICATE-----
   clusters:
     - name: httpbin
       connect_timeout: 10s

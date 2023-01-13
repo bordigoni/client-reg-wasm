@@ -2,11 +2,9 @@ use log;
 use prost::Message;
 use proxy_wasm::traits::Context;
 use proxy_wasm::types::Bytes;
-
-use super::cache;
-
 use registry::RegistryRequest;
 
+use super::cache;
 use crate::cache::WritableCache;
 use crate::grpc::registry::RegistryResponse;
 

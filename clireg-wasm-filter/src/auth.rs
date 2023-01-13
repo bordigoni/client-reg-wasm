@@ -1,7 +1,7 @@
-use crate::cache;
 use log;
 use proxy_wasm::types::Bytes;
 
+use crate::cache;
 use crate::cache::ReadableCache;
 use crate::hash::Hasher;
 
