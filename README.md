@@ -14,7 +14,6 @@ Crates (not sure, it is required, but I had issues, so I install those, maybe tr
 
 `cargo install wasm-pack` (surely duplicate with the above, but it installed something)
 
-`cargo install wasm-tools`
 
 ## Build the filter
 `cd clireg-wasm-filter`
@@ -92,9 +91,6 @@ If you don't specify API Key / user&pass you'll end up with a 401.
 ## Next steps
 
 * Features / deps related
-  * try to generate protobuf struct in wasm-filter
-
-    (cannot work for now at it brings tonic in and wasm build fails with too many code that cannot be compiled with the wasm target)
   * add hasher as part of protobuf
   * make `cargo build --target wasm32-wasi --release` work!
 * Envoy related

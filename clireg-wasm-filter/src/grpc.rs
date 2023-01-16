@@ -8,7 +8,9 @@ use super::cache;
 use crate::cache::WritableCache;
 use crate::grpc::registry::RegistryResponse;
 
-pub mod registry;
+pub mod registry {
+    include!(concat!(env!("OUT_DIR"), concat!("/", "registry", ".rs")));
+}
 
 const RETRY_GRPC_CODES: &[u32] = &[2, 5, 8, 9, 10, 13, 14, 15];
 
@@ -94,7 +96,7 @@ pub fn renew_request(context: &dyn Context, token: u32) {
 fn send_request(context: &dyn Context, token: u32, full_sync: bool) {
     let req = RegistryRequest {
         full_sync,
-        nonce: 0,
+        revision: 0,
     };
     context.send_grpc_stream_message(token, Some(req.encode_to_vec().as_slice()), false)
 }

@@ -1,9 +1,10 @@
 extern crate core;
 
+use std::borrow::Borrow;
+
 use auth::{AuthError, Credential};
 use conf::{ApiKeyLocation, CredSpec, CredsConfig, ServiceConfig, Type};
 use grpc::GRPC;
-use hash::Hasher;
 use jwt::{Claims, Header, Token};
 use log;
 use proxy_wasm::traits::{Context, HttpContext, RootContext};
@@ -28,7 +29,6 @@ proxy_wasm::main! {{
     proxy_wasm::set_http_context(|_context_id, root_context_id| -> Box<dyn HttpContext> {
         Box::new(AuthFilter{
             root_context_id,
-            hasher: hash::HashAlg::SHA256.new(),
             config: Default::default(),
             ready: false
         })
@@ -44,7 +44,6 @@ pub struct AuthFilterConfig {
 
 pub struct AuthFilter {
     root_context_id: u32,
-    hasher: Box<dyn Hasher>,
     config: CredsConfig,
     ready: bool,
 }
@@ -70,7 +69,8 @@ impl HttpContext for AuthFilter {
         let creds = self.extract_credentials();
 
         if let Some(creds) = creds {
-            let res = creds.check(self, self.hasher.as_ref());
+            let hasher = self.config.hash_alg.borrow().new();
+            let res = creds.check(self, hasher.as_ref());
             self.on_failed_send_forbidden(res);
         } else {
             // no client_id extracted
@@ -258,9 +258,10 @@ impl RootContext for AuthFilterConfig {
                             }
                             Type::Creds(creds) => {
                                 log::info!(
-                                    "binding api_id: {} with kind: {} to context: {}",
+                                    "binding api_id: {} with kind: {} and hash alg: {} to context: {}",
                                     creds.api_id,
                                     creds.kind,
+                                    creds.hash_alg,
                                     self.context_id
                                 );
                                 conf::store_filter_config(self, context_id, creds)

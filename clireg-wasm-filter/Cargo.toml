@@ -31,3 +31,5 @@ hex-literal = "0.3"
 [lib]
 crate-type = ["cdylib"]
 
+[build-dependencies]
+tonic-build = "0.8"

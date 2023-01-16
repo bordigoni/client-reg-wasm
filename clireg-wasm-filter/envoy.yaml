@@ -434,7 +434,8 @@ static_resources:
                               "config": "creds",
                               "creds": {
                                 "kind": "basic",
-                                "api_id": "filter2"
+                                "api_id": "filter2",
+                                "hash_alg": "sha512"
                               }
                             }
                         vm_config:

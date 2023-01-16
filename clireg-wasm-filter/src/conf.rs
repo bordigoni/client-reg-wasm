@@ -7,6 +7,7 @@ use {json, serde_cbor};
 
 use super::auth;
 use crate::cache::{ReadableCache, WritableCache};
+use crate::hash::HashAlg;
 
 const DEFAULT_TICK_PERIOD_SEC: u64 = 60;
 
@@ -92,12 +93,14 @@ impl Display for AuthKind {
 pub struct CredsConfig {
     pub api_id: String,
     pub kind: AuthKind,
+    pub hash_alg: HashAlg,
     pub spec: CredSpec,
 }
 
 impl CredSpec {
     pub const KIND_FIELD: &'static str = "kind";
     pub const API_ID_FIELD: &'static str = "api_id";
+    pub const HASH_ALG_FIELD: &'static str = "hash_alg";
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -241,9 +244,24 @@ fn parse_creds_config(conf: &JsonValue, context_id: u32) -> Result<Type, String>
         ));
     }
 
+    let hash_alg: HashAlg;
+    if let JsonValue::Short(alg) = &conf[CredSpec::HASH_ALG_FIELD] {
+        hash_alg = HashAlg::from(alg.as_str());
+        if let HashAlg::Unknown(alg) = hash_alg {
+            return Err(format!(
+                "'{alg}' for {}.{} do not match a supported hash algorithm for context: {context_id}",
+                CREDS_FIELD,
+                CredSpec::HASH_ALG_FIELD
+            ));
+        }
+    } else {
+        hash_alg = Default::default();
+    }
+
     let mut config = CredsConfig {
         api_id,
         kind: AuthKind::from(kind.as_str()),
+        hash_alg,
         spec: CredSpec::Unknown,
     };
     match config.kind {
@@ -362,6 +380,7 @@ mod tests {
         JWTSpec,
         ServiceConfig,
     };
+    use crate::hash::HashAlg::SHA512;
 
     struct MockCache {
         data: HashMap<String, Bytes>,
@@ -393,14 +412,7 @@ mod tests {
 
     #[test]
     fn serialization() {
-        let ser = CredsConfig {
-            api_id: "foo".to_string(),
-            kind: AuthKind::ApiKey,
-            spec: CredSpec::ApiKey(ApiKeySpec {
-                is_in: ApiKeyLocation::Header,
-                name: "api-key".to_string(),
-            }),
-        };
+        let ser = new_cred_config();
 
         let bytes = serde_cbor::to_vec(&ser).unwrap();
         assert_ne!(0, bytes.len());
@@ -409,34 +421,33 @@ mod tests {
         assert_eq!(&ser.api_id, &des.api_id);
         assert_eq!(&ser.kind, &des.kind);
         assert_eq!(&ser.spec, &des.spec);
+        assert_eq!(&ser.hash_alg, &des.hash_alg);
     }
 
     #[test]
     fn store_pull() {
         let mut cache = new_cache();
-        let conf = CredsConfig {
+        let conf = new_cred_config();
+        assert_eq!(
+            true,
+            super::store_filter_config(cache.borrow_mut(), 0, conf)
+        );
+        assert_eq!(
+            new_cred_config(),
+            super::pull_filter_config(&cache, 0).unwrap()
+        )
+    }
+
+    fn new_cred_config() -> CredsConfig {
+        CredsConfig {
             api_id: "foo".to_string(),
             kind: AuthKind::ApiKey,
             spec: CredSpec::ApiKey(ApiKeySpec {
                 is_in: ApiKeyLocation::Header,
                 name: "api-key".to_string(),
             }),
-        };
-        assert_eq!(
-            true,
-            super::store_filter_config(cache.borrow_mut(), 0, conf)
-        );
-        assert_eq!(
-            CredsConfig {
-                api_id: "foo".to_string(),
-                kind: AuthKind::ApiKey,
-                spec: CredSpec::ApiKey(ApiKeySpec {
-                    is_in: ApiKeyLocation::Header,
-                    name: "api-key".to_string(),
-                }),
-            },
-            super::pull_filter_config(&cache, 0).unwrap()
-        )
+            hash_alg: Default::default(),
+        }
     }
 
     #[test]
@@ -461,7 +472,8 @@ mod tests {
                 spec: CredSpec::ApiKey(ApiKeySpec {
                     is_in: ApiKeyLocation::Header,
                     name: "x-api-key".to_string()
-                })
+                }),
+                hash_alg: Default::default()
             })
         );
     }
@@ -473,7 +485,8 @@ mod tests {
     "config": "creds",
     "creds": {
         "kind": "basic",
-        "api_id": "filter1"
+        "api_id": "filter1",
+        "hash_alg": "SHA-512"
     }
 }
 "#;
@@ -484,7 +497,8 @@ mod tests {
             Creds(CredsConfig {
                 api_id: "filter1".to_string(),
                 kind: AuthKind::Basic,
-                spec: CredSpec::Basic
+                spec: CredSpec::Basic,
+                hash_alg: SHA512
             })
         );
     }
@@ -510,7 +524,8 @@ mod tests {
                 kind: AuthKind::JWT,
                 spec: CredSpec::JWT(JWTSpec {
                     claim: "azp".to_string()
-                })
+                }),
+                hash_alg: Default::default()
             })
         );
     }
@@ -613,7 +628,8 @@ mod tests {
                 spec: CredSpec::ApiKey(ApiKeySpec {
                     is_in: ApiKeyLocation::Unknown("foo".to_string()),
                     name: "x-api-key".to_string()
-                })
+                }),
+                hash_alg: Default::default()
             })
         );
     }

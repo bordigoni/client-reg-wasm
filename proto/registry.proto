@@ -6,8 +6,8 @@ message RegistryRequest {
   // not sure of the need, may want to resume on reconnect
   bool full_sync = 1;
 
-  // not sure of the need, identifies the last update received, ignore if  full_sync = true
-  int32 nonce = 2;
+  // from witch revision to resume, identifies the last update received, ignored if full_sync = true
+  int32 revision = 2;
 }
 
 // represents an update, a new/updated or removed credential
