@@ -11,7 +11,7 @@ repository = "git@git.ecd.axway.org:bbordigoni/clireg-wasm.git"
 [dependencies]
 wasm-bindgen = "0.2"
 proxy-wasm = "0.2"
-json= "0.12"
+json = "0.12"
 log = "0.4"
 base64 = "0.21"
 prost = "0.11"
@@ -24,6 +24,9 @@ querystring = "1.1"
 http-auth-basic = "0.3"
 jwt = "0.16"
 auth-headers = "0.1"
+protobuf = "3.2"
+protobuf-json-mapping = "3.2"
+validator = { version = "0.16", features = ["derive"] }
 
 [dev-dependencies]
 hex-literal = "0.3"

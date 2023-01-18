@@ -9,11 +9,8 @@ pub const API_KEY_KIND: &'static str = "api_key";
 pub const BASIC_KIND: &'static str = "basic";
 pub const JWT_KIND: &'static str = "jwt";
 
-// TODO replace with bool
-pub type AuthError = ();
-
 pub trait Credential {
-    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> Result<(), AuthError>;
+    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> bool;
     fn to_cache_key(&self, hasher: &dyn Hasher) -> String;
 }
 
@@ -36,7 +33,7 @@ pub struct BasicAuthCredentials {
 }
 
 impl Credential for ApiKeyCredentials {
-    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> Result<(), AuthError> {
+    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> bool {
         check(
             cache,
             &self.to_cache_key(hasher),
@@ -53,7 +50,7 @@ impl Credential for ApiKeyCredentials {
 }
 
 impl Credential for BasicAuthCredentials {
-    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> Result<(), AuthError> {
+    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> bool {
         check(
             cache,
             &self.to_cache_key(hasher),
@@ -66,7 +63,7 @@ impl Credential for BasicAuthCredentials {
 }
 
 impl Credential for JWTCredentials {
-    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> Result<(), AuthError> {
+    fn check(&self, cache: &dyn ReadableCache, hasher: &dyn Hasher) -> bool {
         check(
             cache,
             &self.to_cache_key(hasher),
@@ -79,26 +76,23 @@ impl Credential for JWTCredentials {
     }
 }
 
-fn check(cache: &dyn ReadableCache, key: &String, expected: Bytes) -> Result<(), AuthError> {
+fn check(cache: &dyn ReadableCache, key: &String, expected: Bytes) -> bool {
     let actual = cache.get(key);
     if let Some(actual) = actual {
         if actual.eq(&expected) {
-            Ok(())
+            true
         } else {
             log::warn!("mismatch {:?} != {:?}", expected, actual);
-            Err(())
+            false
         }
     } else {
-        Err(())
+        false
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::ops::Deref;
-
-    use proxy_wasm::types::Bytes;
 
     use crate::auth::{
         ApiKeyCredentials,
@@ -107,62 +101,42 @@ mod tests {
         Credential,
         JWTCredentials,
     };
-    use crate::cache::{ReadableCache, WritableCache};
+    use crate::cache::mock::MockCache;
+    use crate::cache::WritableCache;
     use crate::hash::HashAlg::SHA256;
-
-    struct MockCache {
-        data: HashMap<String, Bytes>,
-    }
-
-    fn new_cache() -> MockCache {
-        MockCache {
-            data: HashMap::new(),
-        }
-    }
-
-    impl ReadableCache for MockCache {
-        fn get(&self, key: &String) -> Option<Bytes> {
-            self.data.get(key.as_str()).map(|d| d.clone())
-        }
-    }
-
-    impl WritableCache for MockCache {
-        fn put(&mut self, key: String, value: Option<Bytes>) {
-            if let Some(value) = value {
-                self.data.insert(key, value);
-            }
-        }
-
-        fn delete(&mut self, key: String) {
-            self.data.remove(key.as_str());
-        }
-    }
 
     #[test]
     fn check() {
-        let mut cache = new_cache();
+        let mut cache = MockCache::new();
         cache.put("foo".to_string(), Some("bar".as_bytes().to_vec()));
-        super::check(&cache, &"foo".to_string(), "bar".as_bytes().to_vec()).unwrap()
+        assert_eq!(
+            true,
+            super::check(&cache, &"foo".to_string(), "bar".as_bytes().to_vec())
+        )
     }
 
     #[test]
-    #[should_panic]
     fn fail_check_key() {
-        let mut cache = new_cache();
+        let mut cache = MockCache::new();
         cache.put("foo".to_string(), Some("bar".as_bytes().to_vec()));
-        super::check(&cache, &"baz".to_string(), "bar".as_bytes().to_vec()).unwrap()
+        assert_eq!(
+            false,
+            super::check(&cache, &"baz".to_string(), "bar".as_bytes().to_vec())
+        )
     }
     #[test]
-    #[should_panic]
     fn fail_check_value() {
-        let mut cache = new_cache();
+        let mut cache = MockCache::new();
         cache.put("foo".to_string(), Some("bar".as_bytes().to_vec()));
-        super::check(&cache, &"foo".to_string(), "baz".as_bytes().to_vec()).unwrap()
+        assert_eq!(
+            false,
+            super::check(&cache, &"foo".to_string(), "baz".as_bytes().to_vec())
+        )
     }
 
     #[test]
     fn check_api_key() {
-        let mut cache = new_cache();
+        let mut cache = MockCache::new();
         let creds = ApiKeyCredentials {
             client_id: ClientId {
                 api_id: "foo".to_string(),
@@ -174,12 +148,12 @@ mod tests {
             creds.to_cache_key(hasher.deref()),
             Some(hasher.hash("123456789".to_string().into_bytes().to_vec())),
         );
-        creds.check(&cache, hasher.deref()).unwrap()
+        assert_eq!(true, creds.check(&cache, hasher.deref()))
     }
 
     #[test]
     fn check_basic() {
-        let mut cache = new_cache();
+        let mut cache = MockCache::new();
         let creds = BasicAuthCredentials {
             client_id: ClientId {
                 api_id: "foo".to_string(),
@@ -192,12 +166,12 @@ mod tests {
             creds.to_cache_key(hasher.deref()),
             Some(hasher.hash("changeme".to_string().into_bytes().to_vec())),
         );
-        creds.check(&cache, hasher.deref()).unwrap()
+        assert_eq!(true, creds.check(&cache, hasher.deref()))
     }
 
     #[test]
     fn check_jwt() {
-        let mut cache = new_cache();
+        let mut cache = MockCache::new();
         let creds = JWTCredentials {
             client_id: ClientId {
                 api_id: "foo".to_string(),
@@ -209,6 +183,6 @@ mod tests {
             creds.to_cache_key(hasher.deref()),
             Some("benoit".to_string().into_bytes().to_vec()),
         );
-        creds.check(&cache, hasher.deref()).unwrap()
+        assert_eq!(true, creds.check(&cache, hasher.deref()))
     }
 }

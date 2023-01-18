@@ -1,14 +1,13 @@
-extern crate core;
-
 use std::borrow::Borrow;
+use std::time::Duration;
 
-use auth::{AuthError, Credential};
-use conf::{ApiKeyLocation, CredSpec, CredsConfig, ServiceConfig, Type};
+use auth::Credential;
+use conf::{ApiKeyLocation, ConfigType, CredSpec, CredsConfig, ServiceConfig};
 use grpc::GRPC;
 use jwt::{Claims, Header, Token};
 use log;
 use proxy_wasm::traits::{Context, HttpContext, RootContext};
-use proxy_wasm::types::{Action, LogLevel};
+use proxy_wasm::types::{Action, Bytes, LogLevel};
 use serde_json::Value;
 
 mod auth;
@@ -70,8 +69,9 @@ impl HttpContext for AuthFilter {
 
         if let Some(creds) = creds {
             let hasher = self.config.hash_alg.borrow().new();
-            let res = creds.check(self, hasher.as_ref());
-            self.on_failed_send_forbidden(res);
+            if !creds.check(self, hasher.as_ref()) {
+                self.send_forbidden();
+            }
         } else {
             // no client_id extracted
             log::debug!("Authentication: no credentials found in request");
@@ -87,7 +87,7 @@ impl AuthFilter {
         log::debug!(
             "auth kind for {} is {}. ctx:{}",
             &api_id,
-            &self.config.kind,
+            &self.config.kind(),
             self.root_context_id
         );
         match &self.config.spec {
@@ -103,10 +103,6 @@ impl AuthFilter {
                         api_id,
                         Self::extract_from_query_string(request_path, spec.name.as_str()),
                     )
-                }
-                ApiKeyLocation::Unknown(location) => {
-                    log::warn!("Api-Key Location unknown: '{}'", location);
-                    None
                 }
             },
             CredSpec::Basic => {
@@ -139,13 +135,6 @@ impl AuthFilter {
                         }));
                     }
                 }
-                None
-            }
-            _ => {
-                log::debug!(
-                    "auth kind is could not be determined for api_id:{}",
-                    &api_id
-                );
                 None
             }
         }
@@ -213,24 +202,15 @@ impl AuthFilter {
         self.send_http_response(http::StatusCode::UNAUTHORIZED.as_u16() as u32, vec![], None)
     }
 
-    fn on_failed_send_forbidden(&mut self, res: Result<(), AuthError>) {
-        if let Err(_) = res {
-            log::error!("Authentication: check failed");
-            self.send_http_response(http::StatusCode::FORBIDDEN.as_u16() as u32, vec![], None);
-        }
+    fn send_forbidden(&self) {
+        self.send_http_response(http::StatusCode::FORBIDDEN.as_u16() as u32, vec![], None);
     }
 }
 
 impl AuthFilterConfig {
-    fn read_plugin_config(&self) -> Result<String, String> {
-        if let Some(conf) = self.get_plugin_configuration() {
-            match String::from_utf8(conf.to_vec()) {
-                Err(err) => Err(err.utf8_error().to_string()),
-                Ok(json) => Ok(json),
-            }
-        } else {
-            Err(format!("no config found for context: {}", self.context_id))
-        }
+    fn read_plugin_config(&self) -> Result<Bytes, String> {
+        self.get_plugin_configuration()
+            .ok_or(format!("no config found for context: {}", self.context_id))
     }
 }
 
@@ -243,32 +223,29 @@ impl RootContext for AuthFilterConfig {
                 log::error!("cannot read config: {}", e);
                 return false;
             }
-            Ok(json) => {
+            Ok(proto_struct_bytes) => {
                 let context_id = self.context_id;
-                conf::parse_config(&json, context_id)
+                conf::parse_config(proto_struct_bytes, context_id)
                     .map(|config_type| {
                         return match config_type {
-                            Type::Service(conf) => {
+                            ConfigType::Service(conf) => {
                                 self.config = conf;
                                 if self.grpc_token == grpc::DISCONNECTED {
                                     self.grpc_token = self.grpc_connect();
-                                    self.set_tick_period(self.config.tick_period)
+                                    // unwrap is safe since  value is set by default
+                                    self.set_tick_period(Duration::from_secs(self.config.tick_period_secs as u64))
                                 }
                                 true
                             }
-                            Type::Creds(creds) => {
+                            ConfigType::Creds(creds) => {
                                 log::info!(
                                     "binding api_id: {} with kind: {} and hash alg: {} to context: {}",
                                     creds.api_id,
-                                    creds.kind,
+                                    creds.kind(),
                                     creds.hash_alg,
                                     self.context_id
                                 );
                                 conf::store_filter_config(self, context_id, creds)
-                            }
-                            Type::Unknown => {
-                                log::error!("unknown config type: {}", &json);
-                                false
                             }
                         };
                     })

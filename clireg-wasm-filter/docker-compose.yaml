@@ -4,7 +4,7 @@ services:
     hostname: envoy
     volumes:
       - ./envoy.yaml:/etc/envoy/envoy.yaml
-      - ../target/wasm32-unknown-unknown/release:/etc/envoy/proxy-wasm-plugins
+      - ../target/wasm32-wasi/debug/clireg_wasm_filter.wasm:/etc/envoy/proxy-wasm-plugins/clireg_wasm_filter.wasm
     command:
       - "envoy"
       - "-c"

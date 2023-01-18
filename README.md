@@ -6,21 +6,36 @@ Rust
 
 `curl --proto '=https' --tlsv1.3 https://sh.rustup.rs -sSf | sh`
 
-Dependencies
+Wasm compiler
 
-`curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh`
-
-Crates (not sure, it is required, but I had issues, so I install those, maybe try without and tell me)
-
-`cargo install wasm-pack` (surely duplicate with the above, but it installed something)
-
+`rustup target add wasm32-wasi`
 
 ## Build the filter
 `cd clireg-wasm-filter`
 
-`wasm-pack build`
+For dev (leaves stack traces on when panic happens)
 
-Could not get `cargo build --target wasm32-wasi --release` to work so, but prolly what we want for production performance grades. wasm-pack display stack and lines when a panic occurs.
+`cargo build --target wasm32-wasi`
+
+
+For production
+
+`cargo build --target wasm32-wasi --release`
+
+**warning: wasm file will be located in target/wasm32-wasi/release/clireg_wasm_filter.wasm so docker compose won't work** 
+
+## Code
+
+Open in intellij with Rust plugin
+
+* Go to: Languages and Framework => Rust => Rustfmt
+  * choose nightly channel
+  * tick
+    * Use rustfmt instead of ...
+    * Run rustfmt on Save
+* Go to: Languages and Framework => Rust => External linters
+  * Enable Cargo check or Cargo clippy
+  * Tick the checkbox to allow running external Linter
 
 ## Build Client Registry gRPC Service (optional)
 
@@ -45,7 +60,7 @@ So the gRPC server sends an empty response (no op in wasm filter) just after the
 
 You can find the documented protobuf in `proto/` 
 
-## Run
+## Run (you to build first)
 
 1. Run the gRPC server (in its own shell in clireg-grpc directory) 
 
@@ -67,15 +82,16 @@ You can find the documented protobuf in `proto/`
 
 Proxy any httpbin api calls (e.g /headers)
 
-`curl -vk --resolve apikey-header.ampgw.axway.com:10000:127.0.0.1 "https://apikey-header.ampgw.axway.com:10000/headers" -H 'X-API-KEY: ABCDEF'`
-`curl -vk -u admin:changeme --basic --resolve basic.ampgw.axway.com:10000:127.0.0.1 "https://basic.ampgw.axway.com:10000/headers"`
-`curl -vk --resolve apikey-query.ampgw.axway.com:10000:127.0.0.1 "https://apikey-query.ampgw.axway.com:10000/headers?X-API-KEY=ABCDEF"`
-`curl -vk --resolve jwt.ampgw.axway.com:10000:127.0.0.1 --oauth2-bearer "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJjbGllbnRfaWQiOiJiZW5vaXQifQ.wrdsdXeH5tPDmM4alg9jiVNOTXSW1YV_SPCUwKdQPC4" "https://jwt.ampgw.axway.com:10000/headers"`
+* `curl -vk --resolve apikey-header.ampgw.axway.com:10000:127.0.0.1 "https://apikey-header.ampgw.axway.com:10000/headers" -H 'X-API-KEY: ABCDEF'`
+* `curl -vk -u admin:changeme --basic --resolve basic.ampgw.axway.com:10000:127.0.0.1 "https://basic.ampgw.axway.com:10000/headers"`
+* `curl -vk --resolve apikey-query.ampgw.axway.com:10000:127.0.0.1 "https://apikey-query.ampgw.axway.com:10000/headers?X-API-KEY=ABCDEF"`
+* `curl -vk --resolve jwt.ampgw.axway.com:10000:127.0.0.1 --oauth2-bearer "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJjbGllbnRfaWQiOiJiZW5vaXQifQ.wrdsdXeH5tPDmM4alg9jiVNOTXSW1YV_SPCUwKdQPC4" "https://jwt.ampgw.axway.com:10000/headers"`
 
-gRPC test server will chage API key and remove basic auth every 10 secs, following call should end up with a 403.
+gRPC test server will change API key and remove basic auth every 10 secs, following call should end up with a 403.
 If you don't specify API Key / user&pass you'll end up with a 401.
 
 ## Run perf test
+* build the filter in production mode or else docker compose won't work 
 * gRPC service: see above (use of data.rs/many_creds() function so that no credentials removal occurs and on 403 can happen, and get up to a 1 000 000 creds.
 * envoy & backend (nighthawk sending 10 bytes): `docker-compose --compatibility -f docker-compose-perf.yaml up`
 * client (add those hosts to /etc/hosts `hey` does not have a dynamic local DNS cache like cURL with --resolve) :
@@ -90,12 +106,8 @@ If you don't specify API Key / user&pass you'll end up with a 401.
 
 ## Next steps
 
-* Features / deps related
-  * add hasher as part of protobuf
-  * make `cargo build --target wasm32-wasi --release` work!
 * Envoy related
    * use several envoys
 * Clean code
   * docs
-  * Config as JSON (protobuf Struct)
 

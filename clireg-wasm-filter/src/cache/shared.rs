@@ -1,9 +1,10 @@
 use proxy_wasm::traits::Context;
 use proxy_wasm::types::Bytes;
 
-use super::ReadableCache;
-use crate::cache::WritableCache;
 use crate::{AuthFilter, AuthFilterConfig};
+use crate::cache::WritableCache;
+
+use super::ReadableCache;
 
 impl ReadableCache for AuthFilter {
     fn get(&self, id: &String) -> Option<Bytes> {

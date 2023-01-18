@@ -6,7 +6,7 @@ use crate::registry::registry_response::Credential;
 use crate::registry::RegistryResponse;
 
 pub fn load() -> Vec<RegistryResponse> {
-    simple_case()
+    _many_creds()
 }
 
 const API_KEY_KIND: &str = "api_key";

@@ -1,6 +1,6 @@
 use proxy_wasm::types::Bytes;
 
-pub mod hard_coded;
+pub mod mock;
 pub mod shared;
 
 pub trait ReadableCache {

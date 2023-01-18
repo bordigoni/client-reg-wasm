@@ -7,14 +7,10 @@ bootstrap_extensions:
         name: "bootstrap"
         root_id: client_reg
         configuration:
-          "@type": "type.googleapis.com/google.protobuf.StringValue"
-          value: |
-            {
-              "config": "service",
-              "service": {
-                "cluster": "clireg"
-              }
-            }
+          "@type": "type.googleapis.com/google.protobuf.Struct"
+          value:
+            service:
+              cluster: "clireg"
         vm_config:
           vm_id: "auth_vm"
           runtime: "envoy.wasm.runtime.v8"
@@ -62,17 +58,14 @@ static_resources:
                         name: "http_auth"
                         root_id: http_bin_auth
                         configuration:
-                          "@type": "type.googleapis.com/google.protobuf.StringValue"
-                          value: |
-                            {
-                              "config": "creds",
-                              "creds": {
-                                "kind": "api_key",
-                                "api_id": "filter1",
-                                "in": "header",
-                                "name": "x-api-key"
-                              }
-                            }
+                          "@type": "type.googleapis.com/google.protobuf.Struct"
+                          value:
+                            creds:
+                              api_id: filter1
+                              spec:
+                                api_key:
+                                  in: header
+                                  name: x-api-key
                         vm_config:
                           vm_id: "auth_vm"
                           runtime: "envoy.wasm.runtime.v8"
@@ -184,17 +177,14 @@ static_resources:
                         name: "http_auth"
                         root_id: http_bin_auth
                         configuration:
-                          "@type": "type.googleapis.com/google.protobuf.StringValue"
-                          value: |
-                            {
-                              "config": "creds",
-                              "creds": {
-                                "kind": "api_key",
-                                "api_id": "filter1",
-                                "in": "query_param",
-                                "name": "x-api-key"
-                              }
-                            }
+                          "@type": "type.googleapis.com/google.protobuf.Struct"
+                          value:
+                            creds:
+                              api_id: filter1
+                              spec:
+                                api_key:
+                                  in: query_param
+                                  name: x-api-key
                         vm_config:
                           vm_id: "auth_vm"
                           runtime: "envoy.wasm.runtime.v8"
@@ -307,16 +297,13 @@ static_resources:
                         name: "http_auth"
                         root_id: http_bin_auth
                         configuration:
-                          "@type": "type.googleapis.com/google.protobuf.StringValue"
-                          value: |
-                            {
-                              "config": "creds",
-                              "creds": {
-                                "kind": "jwt",
-                                "api_id": "filter3",
-                                "claim": "client_id"
-                              }
-                            }
+                          "@type": "type.googleapis.com/google.protobuf.Struct"
+                          value:
+                            creds:
+                              api_id: filter3
+                              spec:
+                                jwt:
+                                  claim: client_id
                         vm_config:
                           vm_id: "auth_vm"
                           runtime: "envoy.wasm.runtime.v8"
@@ -428,16 +415,12 @@ static_resources:
                         name: "http_auth"
                         root_id: http_bin_auth
                         configuration:
-                          "@type": "type.googleapis.com/google.protobuf.StringValue"
-                          value: |
-                            {
-                              "config": "creds",
-                              "creds": {
-                                "kind": "basic",
-                                "api_id": "filter2",
-                                "hash_alg": "sha512"
-                              }
-                            }
+                          "@type": "type.googleapis.com/google.protobuf.Struct"
+                          value:
+                            creds:
+                              api_id: filter2
+                              hash_alg: SHA512
+                              spec: basic
                         vm_config:
                           vm_id: "auth_vm"
                           runtime: "envoy.wasm.runtime.v8"
@@ -542,7 +525,7 @@ static_resources:
         envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
           "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
           explicit_http_config:
-            http2_protocol_options: {}
+            http2_protocol_options: { }
       load_assignment:
         cluster_name: clireg
         endpoints:
