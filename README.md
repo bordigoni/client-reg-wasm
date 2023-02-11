@@ -1,5 +1,14 @@
 # WASM Client Registry for Envoy
 
+This project aims to prove possibility to perform
+authentication and authorization via a Wasm filter in Envoy using a gRPC service.
+
+Features:
+* Sync credentials with a gRPC service (a running module of this project with hard coded credential)
+* Perform Basic Auth
+* Check client id from JWT token (assuming it is validated beforehand)
+* Check API key in query string or any header
+
 ## Setup
 
 Rust
@@ -13,7 +22,7 @@ Wasm compiler
 ## Build the filter
 `cd clireg-wasm-filter`
 
-For dev (leaves stack traces on when panic happens)
+For dev (leaves stack traces when a panic happens)
 
 `cargo build --target wasm32-wasi`
 
@@ -22,20 +31,11 @@ For production
 
 `cargo build --target wasm32-wasi --release`
 
-**warning: wasm file will be located in target/wasm32-wasi/release/clireg_wasm_filter.wasm so docker compose won't work** 
+**warning**: wasm file will be located in `target/wasm32-wasi/**release**/clireg_wasm_filter.wasm` so docker-compose won't work without a change.
 
-## Code
+## Code : 
 
-Open in intellij with Rust plugin
-
-* Go to: Languages and Framework => Rust => Rustfmt
-  * choose nightly channel
-  * tick
-    * Use rustfmt instead of ...
-    * Run rustfmt on Save
-* Go to: Languages and Framework => Rust => External linters
-  * Enable Cargo check or Cargo clippy
-  * Tick the checkbox to allow running external Linter
+see CONTRIBUTING.md
 
 ## Build Client Registry gRPC Service (optional)
 
@@ -53,8 +53,10 @@ Then it delivers a message every ten seconds.
 3. loop forever
 
 There is maybe a bug in Envoy (or an odd behaviour), messages are delivered 2 by 2 
-*only when there 2 wasm filter in the same filter chain, supposedly on the same VM*.
+*only when there 2 wasm filters in the same filter chain*.
 So the gRPC server sends an empty response (no op in wasm filter) just after the actual response to allow envoy to see it.
+
+In the current setting, envoy is not configured in such way.
 
 ### protobuf (inc. docs)
 
@@ -64,7 +66,7 @@ You can find the documented protobuf in `proto/`
 
 1. Run the gRPC server (in its own shell in clireg-grpc directory) 
 
-   Run you don't run it first you'll have to wait 60sec before envoy retries.
+   Run you don't run it first but you'll have to wait 60sec before envoy retries.
 
    `cd clireg-grpc-service`
 
@@ -105,9 +107,15 @@ If you don't specify API Key / user&pass you'll end up with a 401.
     * `hey -c <users> -q <qps/user> -z 1m -cpus 4 -m GET -host noauth.ampgw.axway.com "https://noauth.ampgw.axway.com:8443/"`
 
 ## Next steps
-
+* Generate new certs for *.api.bordigoni.fr
+* CI
+* gRPC Service 
+  * Docker build
+  * Config to switch from perf testing to simple.
+  * Handle incremental changes, but need to implement a data source abstraction and have one store configured first
 * Envoy related
    * use several envoys
 * Clean code
   * docs
-
+* Contribute to proxy-wasm test framework in order to run integration tests.
+* Wiki to explain various configuration possibilities
